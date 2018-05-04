@@ -20,6 +20,11 @@
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/RenderbufferImpl.h"
 
+namespace rx
+{
+class GLImplFactory;
+}  // namespace rx
+
 namespace gl
 {
 // A GL renderbuffer object is usually used as a depth or stencil buffer attachment
@@ -27,20 +32,54 @@ namespace gl
 // FramebufferAttachment and Framebuffer for how they are applied to an FBO via an
 // attachment point.
 
+class RenderbufferState final : angle::NonCopyable
+{
+  public:
+    RenderbufferState();
+    ~RenderbufferState();
+
+    GLsizei getWidth() const;
+    GLsizei getHeight() const;
+    const Format &getFormat() const;
+    GLsizei getSamples() const;
+
+  private:
+    friend class Renderbuffer;
+
+    void update(GLsizei width,
+                GLsizei height,
+                const Format &format,
+                GLsizei samples,
+                InitState initState);
+
+    GLsizei mWidth;
+    GLsizei mHeight;
+    Format mFormat;
+    GLsizei mSamples;
+
+    // For robust resource init.
+    InitState mInitState;
+};
+
 class Renderbuffer final : public egl::ImageSibling,
-                           public gl::FramebufferAttachmentObject,
                            public LabeledObject
 {
   public:
-    Renderbuffer(rx::RenderbufferImpl *impl, GLuint id);
-    virtual ~Renderbuffer();
+    Renderbuffer(rx::GLImplFactory *implFactory, GLuint id);
+    ~Renderbuffer() override;
+
+    Error onDestroy(const Context *context) override;
 
     void setLabel(const std::string &label) override;
     const std::string &getLabel() const override;
 
-    Error setStorage(GLenum internalformat, size_t width, size_t height);
-    Error setStorageMultisample(size_t samples, GLenum internalformat, size_t width, size_t height);
-    Error setStorageEGLImageTarget(egl::Image *imageTarget);
+    Error setStorage(const Context *context, GLenum internalformat, size_t width, size_t height);
+    Error setStorageMultisample(const Context *context,
+                                size_t samples,
+                                GLenum internalformat,
+                                size_t width,
+                                size_t height);
+    Error setStorageEGLImageTarget(const Context *context, egl::Image *imageTarget);
 
     rx::RenderbufferImpl *getImplementation() const;
 
@@ -56,31 +95,26 @@ class Renderbuffer final : public egl::ImageSibling,
     GLuint getStencilSize() const;
 
     // FramebufferAttachmentObject Impl
-    Extents getAttachmentSize(const FramebufferAttachment::Target &target) const override;
-    const Format &getAttachmentFormat(
-        const FramebufferAttachment::Target & /*target*/) const override
-    {
-        return getFormat();
-    }
-    GLsizei getAttachmentSamples(const FramebufferAttachment::Target &/*target*/) const override { return getSamples(); }
+    Extents getAttachmentSize(const ImageIndex &imageIndex) const override;
+    const Format &getAttachmentFormat(GLenum binding, const ImageIndex &imageIndex) const override;
+    GLsizei getAttachmentSamples(const ImageIndex &imageIndex) const override;
 
-    void onAttach() override;
-    void onDetach() override;
+    void onAttach(const Context *context) override;
+    void onDetach(const Context *context) override;
     GLuint getId() const override;
 
-  private:
-    rx::FramebufferAttachmentObjectImpl *getAttachmentImpl() const override { return mRenderbuffer; }
+    InitState initState(const ImageIndex &imageIndex) const override;
+    void setInitState(const ImageIndex &imageIndex, InitState initState) override;
 
-    rx::RenderbufferImpl *mRenderbuffer;
+  private:
+    rx::FramebufferAttachmentObjectImpl *getAttachmentImpl() const override;
+
+    RenderbufferState mState;
+    std::unique_ptr<rx::RenderbufferImpl> mImplementation;
 
     std::string mLabel;
-
-    GLsizei mWidth;
-    GLsizei mHeight;
-    Format mFormat;
-    GLsizei mSamples;
 };
 
-}
+}  // namespace gl
 
 #endif   // LIBANGLE_RENDERBUFFER_H_

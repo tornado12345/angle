@@ -7,6 +7,9 @@
 #include "PreprocessorTest.h"
 #include "compiler/preprocessor/Token.h"
 
+namespace angle
+{
+
 class LocationTest : public PreprocessorTest
 {
 protected:
@@ -33,7 +36,7 @@ TEST_F(LocationTest, String0_Line1)
     pp::SourceLocation loc(0, 1);
 
     SCOPED_TRACE("String0_Line1");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, String0_Line2)
@@ -42,7 +45,7 @@ TEST_F(LocationTest, String0_Line2)
     pp::SourceLocation loc(0, 2);
 
     SCOPED_TRACE("String0_Line2");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, String1_Line1)
@@ -51,7 +54,7 @@ TEST_F(LocationTest, String1_Line1)
     pp::SourceLocation loc(1, 1);
 
     SCOPED_TRACE("String1_Line1");
-    expectLocation(2, str, NULL, loc);
+    expectLocation(2, str, nullptr, loc);
 }
 
 TEST_F(LocationTest, String1_Line2)
@@ -60,7 +63,7 @@ TEST_F(LocationTest, String1_Line2)
     pp::SourceLocation loc(1, 2);
 
     SCOPED_TRACE("String1_Line2");
-    expectLocation(2, str, NULL, loc);
+    expectLocation(2, str, nullptr, loc);
 }
 
 TEST_F(LocationTest, NewlineInsideCommentCounted)
@@ -69,14 +72,14 @@ TEST_F(LocationTest, NewlineInsideCommentCounted)
     pp::SourceLocation loc(0, 3);
 
     SCOPED_TRACE("NewlineInsideCommentCounted");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, ErrorLocationAfterComment)
 {
     const char* str = "/*\n\n*/@";
 
-    ASSERT_TRUE(mPreprocessor.init(1, &str, NULL));
+    ASSERT_TRUE(mPreprocessor.init(1, &str, nullptr));
     EXPECT_CALL(mDiagnostics, print(pp::Diagnostics::PP_INVALID_CHARACTER,
                                     pp::SourceLocation(0, 3),
                                     "@"));
@@ -94,7 +97,7 @@ TEST_F(LocationTest, TokenStraddlingTwoStrings)
     pp::SourceLocation loc(0, 1);
 
     SCOPED_TRACE("TokenStraddlingTwoStrings");
-    expectLocation(2, str, NULL, loc);
+    expectLocation(2, str, nullptr, loc);
 }
 
 TEST_F(LocationTest, TokenStraddlingThreeStrings)
@@ -103,13 +106,13 @@ TEST_F(LocationTest, TokenStraddlingThreeStrings)
     pp::SourceLocation loc(0, 1);
 
     SCOPED_TRACE("TokenStraddlingThreeStrings");
-    expectLocation(3, str, NULL, loc);
+    expectLocation(3, str, nullptr, loc);
 }
 
 TEST_F(LocationTest, EndOfFileWithoutNewline)
 {
     const char* const str[] = {"foo"};
-    ASSERT_TRUE(mPreprocessor.init(1, str, NULL));
+    ASSERT_TRUE(mPreprocessor.init(1, str, nullptr));
 
     pp::Token token;
     mPreprocessor.lex(&token);
@@ -127,7 +130,7 @@ TEST_F(LocationTest, EndOfFileWithoutNewline)
 TEST_F(LocationTest, EndOfFileAfterNewline)
 {
     const char* const str[] = {"foo\n"};
-    ASSERT_TRUE(mPreprocessor.init(1, str, NULL));
+    ASSERT_TRUE(mPreprocessor.init(1, str, nullptr));
 
     pp::Token token;
     mPreprocessor.lex(&token);
@@ -145,7 +148,7 @@ TEST_F(LocationTest, EndOfFileAfterNewline)
 TEST_F(LocationTest, EndOfFileAfterEmptyString)
 {
     const char* const str[] = {"foo\n", "\n", ""};
-    ASSERT_TRUE(mPreprocessor.init(3, str, NULL));
+    ASSERT_TRUE(mPreprocessor.init(3, str, nullptr));
 
     pp::Token token;
     mPreprocessor.lex(&token);
@@ -167,7 +170,7 @@ TEST_F(LocationTest, ValidLineDirective1)
     pp::SourceLocation loc(0, 10);
 
     SCOPED_TRACE("ValidLineDirective1");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, ValidLineDirective2)
@@ -177,7 +180,7 @@ TEST_F(LocationTest, ValidLineDirective2)
     pp::SourceLocation loc(20, 10);
 
     SCOPED_TRACE("ValidLineDirective2");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, LineDirectiveCommentsIgnored)
@@ -197,7 +200,7 @@ TEST_F(LocationTest, LineDirectiveCommentsIgnored)
     pp::SourceLocation loc(20, 10);
 
     SCOPED_TRACE("LineDirectiveCommentsIgnored");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, LineDirectiveWithMacro1)
@@ -209,7 +212,7 @@ TEST_F(LocationTest, LineDirectiveWithMacro1)
     pp::SourceLocation loc(20, 10);
 
     SCOPED_TRACE("LineDirectiveWithMacro1");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, LineDirectiveWithMacro2)
@@ -220,7 +223,7 @@ TEST_F(LocationTest, LineDirectiveWithMacro2)
     pp::SourceLocation loc(20, 10);
 
     SCOPED_TRACE("LineDirectiveWithMacro2");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, LineDirectiveWithPredefinedMacro)
@@ -230,7 +233,7 @@ TEST_F(LocationTest, LineDirectiveWithPredefinedMacro)
     pp::SourceLocation loc(0, 1);
 
     SCOPED_TRACE("LineDirectiveWithMacro");
-    expectLocation(1, &str, NULL, loc);
+    expectLocation(1, &str, nullptr, loc);
 }
 
 TEST_F(LocationTest, LineDirectiveNewlineBeforeStringBreak)
@@ -241,7 +244,7 @@ TEST_F(LocationTest, LineDirectiveNewlineBeforeStringBreak)
     pp::SourceLocation loc(21, 1);
 
     SCOPED_TRACE("LineDirectiveNewlineBeforeStringBreak");
-    expectLocation(2, str, NULL, loc);
+    expectLocation(2, str, nullptr, loc);
 }
 
 TEST_F(LocationTest, LineDirectiveNewlineAfterStringBreak)
@@ -251,17 +254,79 @@ TEST_F(LocationTest, LineDirectiveNewlineAfterStringBreak)
     pp::SourceLocation loc(20, 10);
 
     SCOPED_TRACE("LineDirectiveNewlineAfterStringBreak");
-    expectLocation(2, str, NULL, loc);
+    expectLocation(2, str, nullptr, loc);
 }
 
 TEST_F(LocationTest, LineDirectiveMissingNewline)
 {
     const char* str = "#line 10";
-    ASSERT_TRUE(mPreprocessor.init(1, &str, NULL));
+    ASSERT_TRUE(mPreprocessor.init(1, &str, nullptr));
 
     using testing::_;
     // Error reported about EOF.
     EXPECT_CALL(mDiagnostics, print(pp::Diagnostics::PP_EOF_IN_DIRECTIVE, _, _));
+
+    pp::Token token;
+    mPreprocessor.lex(&token);
+}
+
+// Test for an error being generated when the line number overflows - regular version
+TEST_F(LocationTest, LineOverflowRegular)
+{
+    const char *str = "#line 0x7FFFFFFF\n\n";
+
+    ASSERT_TRUE(mPreprocessor.init(1, &str, nullptr));
+
+    using testing::_;
+    // Error reported about EOF.
+    EXPECT_CALL(mDiagnostics, print(pp::Diagnostics::PP_TOKENIZER_ERROR, _, _));
+
+    pp::Token token;
+    mPreprocessor.lex(&token);
+}
+
+// Test for an error being generated when the line number overflows - inside /* */ comment version
+TEST_F(LocationTest, LineOverflowInComment)
+{
+    const char *str = "#line 0x7FFFFFFF\n/*\n*/";
+
+    ASSERT_TRUE(mPreprocessor.init(1, &str, nullptr));
+
+    using testing::_;
+    // Error reported about EOF.
+    EXPECT_CALL(mDiagnostics, print(pp::Diagnostics::PP_TOKENIZER_ERROR, _, _));
+
+    pp::Token token;
+    mPreprocessor.lex(&token);
+}
+
+// Test for an error being generated when the line number overflows - inside \n continuation
+// version
+TEST_F(LocationTest, LineOverflowInContinuationN)
+{
+    const char *str = "#line 0x7FFFFFFF\n \\\n\n";
+
+    ASSERT_TRUE(mPreprocessor.init(1, &str, nullptr));
+
+    using testing::_;
+    // Error reported about EOF.
+    EXPECT_CALL(mDiagnostics, print(pp::Diagnostics::PP_TOKENIZER_ERROR, _, _));
+
+    pp::Token token;
+    mPreprocessor.lex(&token);
+}
+
+// Test for an error being generated when the line number overflows - inside \r\n continuation
+// version
+TEST_F(LocationTest, LineOverflowInContinuationRN)
+{
+    const char *str = "#line 0x7FFFFFFF\n \\\r\n\n";
+
+    ASSERT_TRUE(mPreprocessor.init(1, &str, nullptr));
+
+    using testing::_;
+    // Error reported about EOF.
+    EXPECT_CALL(mDiagnostics, print(pp::Diagnostics::PP_TOKENIZER_ERROR, _, _));
 
     pp::Token token;
     mPreprocessor.lex(&token);
@@ -281,7 +346,7 @@ class InvalidLineTest : public LocationTest,
 TEST_P(InvalidLineTest, Identified)
 {
     LineTestParam param = GetParam();
-    ASSERT_TRUE(mPreprocessor.init(1, &param.str, NULL));
+    ASSERT_TRUE(mPreprocessor.init(1, &param.str, nullptr));
 
     using testing::_;
     // Invalid line directive call.
@@ -320,7 +385,7 @@ TEST_P(LineExpressionTest, ExpressionEvaluation)
 
     pp::SourceLocation loc(2, param.expectedLine);
 
-    expectLocation(3, strs, NULL, loc);
+    expectLocation(3, strs, nullptr, loc);
 }
 
 static const LineExpressionTestParam kParamsLineExpressionTest[] = {
@@ -349,3 +414,5 @@ static const LineExpressionTestParam kParamsLineExpressionTest[] = {
     {"16 >> 2", 4}};
 
 INSTANTIATE_TEST_CASE_P(All, LineExpressionTest, testing::ValuesIn(kParamsLineExpressionTest));
+
+}  // namespace angle

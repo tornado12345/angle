@@ -34,11 +34,11 @@
 
 // clang-format off
 #if (DE_OS == DE_OS_WIN32)
-    #define ANGLE_EGL_LIBRARY_NAME "libEGL.dll"
+    #define ANGLE_EGL_LIBRARY_FULL_NAME ANGLE_EGL_LIBRARY_NAME ".dll"
 #elif (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID)
-    #define ANGLE_EGL_LIBRARY_NAME "libEGL.so"
+    #define ANGLE_EGL_LIBRARY_FULL_NAME ANGLE_EGL_LIBRARY_NAME ".so"
 #elif (DE_OS == DE_OS_OSX)
-    #define ANGLE_EGL_LIBRARY_NAME "libEGL.dylib"
+    #define ANGLE_EGL_LIBRARY_FULL_NAME ANGLE_EGL_LIBRARY_NAME ".dylib"
 #else
     #error "Unsupported platform"
 #endif
@@ -72,7 +72,14 @@ class ANGLENativeDisplay : public eglu::NativeDisplay
     ANGLENativeDisplay(const std::vector<eglw::EGLAttrib> &attribs);
     virtual ~ANGLENativeDisplay() {}
 
-    void *getPlatformNative() override { return mDeviceContext; }
+    void *getPlatformNative() override
+    {
+        // On OSX 64bits mDeviceContext is a 32 bit integer, so we can't simply
+        // use reinterpret_cast<void*>.
+        void *result = nullptr;
+        memcpy(&result, &mDeviceContext, sizeof(mDeviceContext));
+        return result;
+    }
     const eglw::EGLAttrib *getPlatformAttributes() const override { return &mPlatformAttributes[0]; }
     const eglw::Library &getLibrary() const override { return mLibrary; }
 
@@ -142,7 +149,7 @@ class NativeWindow : public eglu::NativeWindow
 ANGLENativeDisplay::ANGLENativeDisplay(const std::vector<EGLAttrib> &attribs)
     : eglu::NativeDisplay(DISPLAY_CAPABILITIES, EGL_PLATFORM_ANGLE_ANGLE, "EGL_EXT_platform_base"),
       mDeviceContext(EGL_DEFAULT_DISPLAY),
-      mLibrary(ANGLE_EGL_LIBRARY_NAME),
+      mLibrary(ANGLE_EGL_LIBRARY_FULL_NAME),
       mPlatformAttributes(attribs)
 {
 }
@@ -295,9 +302,10 @@ void NativeWindow::setSurfaceSize(IVec2 size)
 void NativeWindow::readScreenPixels(tcu::TextureLevel *dst) const
 {
     dst->setStorage(TextureFormat(TextureFormat::BGRA, TextureFormat::UNORM_INT8), mWindow->getWidth(), mWindow->getHeight());
-    bool success = mWindow->takeScreenshot(reinterpret_cast<uint8_t*>(dst->getAccess().getDataPtr()));
-    DE_ASSERT(success);
-    DE_UNREF(success);
+    if (!mWindow->takeScreenshot(reinterpret_cast<uint8_t *>(dst->getAccess().getDataPtr())))
+    {
+        throw InternalError("Failed to read screen pixels", DE_NULL, __FILE__, __LINE__);
+    }
 }
 
 } // anonymous

@@ -12,10 +12,13 @@
 #include <bitset>
 #include <memory>
 
-#include "common/angleutils.h"
 #include "common/Color.h"
+#include "common/angleutils.h"
+#include "common/bitset_utils.h"
 #include "libANGLE/Debug.h"
+#include "libANGLE/GLES1State.h"
 #include "libANGLE/Program.h"
+#include "libANGLE/ProgramPipeline.h"
 #include "libANGLE/RefCountObject.h"
 #include "libANGLE/Renderbuffer.h"
 #include "libANGLE/Sampler.h"
@@ -32,20 +35,19 @@ class VertexArray;
 class Context;
 struct Caps;
 
-typedef std::map<GLenum, BindingPointer<Texture>> TextureMap;
-
-class State : angle::NonCopyable
+class State : public angle::ObserverInterface, angle::NonCopyable
 {
   public:
     State();
-    ~State();
+    ~State() override;
 
-    void initialize(const Caps &caps,
-                    const Extensions &extensions,
-                    const Version &clientVersion,
+    void initialize(const Context *context,
                     bool debug,
-                    bool bindGeneratesResource);
-    void reset();
+                    bool bindGeneratesResource,
+                    bool clientArraysEnabled,
+                    bool robustResourceInit,
+                    bool programBinaryCacheEnabled);
+    void reset(const Context *context);
 
     // State chunk getters
     const RasterizerState &getRasterizerState() const;
@@ -76,7 +78,7 @@ class State : angle::NonCopyable
     // Face culling state manipulation
     bool isCullFaceEnabled() const;
     void setCullFace(bool enabled);
-    void setCullMode(GLenum mode);
+    void setCullMode(CullFaceMode mode);
     void setFrontFace(GLenum front);
 
     // Depth test state manipulation
@@ -102,8 +104,12 @@ class State : angle::NonCopyable
     void setStencilBackParams(GLenum stencilBackFunc, GLint stencilBackRef, GLuint stencilBackMask);
     void setStencilWritemask(GLuint stencilWritemask);
     void setStencilBackWritemask(GLuint stencilBackWritemask);
-    void setStencilOperations(GLenum stencilFail, GLenum stencilPassDepthFail, GLenum stencilPassDepthPass);
-    void setStencilBackOperations(GLenum stencilBackFail, GLenum stencilBackPassDepthFail, GLenum stencilBackPassDepthPass);
+    void setStencilOperations(GLenum stencilFail,
+                              GLenum stencilPassDepthFail,
+                              GLenum stencilPassDepthPass);
+    void setStencilBackOperations(GLenum stencilBackFail,
+                                  GLenum stencilBackPassDepthFail,
+                                  GLenum stencilBackPassDepthPass);
     GLint getStencilRef() const;
     GLint getStencilBackRef() const;
 
@@ -118,8 +124,15 @@ class State : angle::NonCopyable
     bool isSampleCoverageEnabled() const;
     void setSampleCoverage(bool enabled);
     void setSampleCoverageParams(GLclampf value, bool invert);
-    GLclampf getSampleCoverageValue() const;
+    GLfloat getSampleCoverageValue() const;
     bool getSampleCoverageInvert() const;
+
+    // Multisample mask state manipulation.
+    bool isSampleMaskEnabled() const;
+    void setSampleMaskEnabled(bool enabled);
+    void setSampleMaskParams(GLuint maskNumber, GLbitfield mask);
+    GLbitfield getSampleMaskWord(GLuint maskNumber) const;
+    GLuint getMaxSampleMaskWords() const;
 
     // Multisampling/alpha to one manipulation.
     void setSampleAlphaToOne(bool enabled);
@@ -152,6 +165,9 @@ class State : angle::NonCopyable
     // GL_CHROMIUM_bind_generates_resource
     bool isBindGeneratesResourceEnabled() const;
 
+    // GL_ANGLE_client_arrays
+    bool areClientArraysEnabled() const;
+
     // Viewport state setter/getter
     void setViewportParams(GLint x, GLint y, GLsizei width, GLsizei height);
     const Rectangle &getViewport() const;
@@ -159,24 +175,24 @@ class State : angle::NonCopyable
     // Texture binding & active texture unit manipulation
     void setActiveSampler(unsigned int active);
     unsigned int getActiveSampler() const;
-    void setSamplerTexture(GLenum type, Texture *texture);
-    Texture *getTargetTexture(GLenum target) const;
-    Texture *getSamplerTexture(unsigned int sampler, GLenum type) const;
-    GLuint getSamplerTextureId(unsigned int sampler, GLenum type) const;
-    void detachTexture(const TextureMap &zeroTextures, GLuint texture);
-    void initializeZeroTextures(const TextureMap &zeroTextures);
+    void setSamplerTexture(const Context *context, TextureType type, Texture *texture);
+    Texture *getTargetTexture(TextureType type) const;
+    Texture *getSamplerTexture(unsigned int sampler, TextureType type) const;
+    GLuint getSamplerTextureId(unsigned int sampler, TextureType type) const;
+    void detachTexture(const Context *context, const TextureMap &zeroTextures, GLuint texture);
+    void initializeZeroTextures(const Context *context, const TextureMap &zeroTextures);
 
     // Sampler object binding manipulation
-    void setSamplerBinding(GLuint textureUnit, Sampler *sampler);
+    void setSamplerBinding(const Context *context, GLuint textureUnit, Sampler *sampler);
     GLuint getSamplerId(GLuint textureUnit) const;
     Sampler *getSampler(GLuint textureUnit) const;
-    void detachSampler(GLuint sampler);
+    void detachSampler(const Context *context, GLuint sampler);
 
     // Renderbuffer binding manipulation
-    void setRenderbufferBinding(Renderbuffer *renderbuffer);
+    void setRenderbufferBinding(const Context *context, Renderbuffer *renderbuffer);
     GLuint getRenderbufferId() const;
     Renderbuffer *getCurrentRenderbuffer() const;
-    void detachRenderbuffer(GLuint renderbuffer);
+    void detachRenderbuffer(const Context *context, GLuint renderbuffer);
 
     // Framebuffer binding manipulation
     void setReadFramebufferBinding(Framebuffer *framebuffer);
@@ -188,61 +204,81 @@ class State : angle::NonCopyable
     bool removeDrawFramebufferBinding(GLuint framebuffer);
 
     // Vertex array object binding manipulation
-    void setVertexArrayBinding(VertexArray *vertexArray);
+    void setVertexArrayBinding(const Context *context, VertexArray *vertexArray);
     GLuint getVertexArrayId() const;
     VertexArray *getVertexArray() const;
-    bool removeVertexArrayBinding(GLuint vertexArray);
+    bool removeVertexArrayBinding(const Context *context, GLuint vertexArray);
 
     // Program binding manipulation
-    void setProgram(Program *newProgram);
+    void setProgram(const Context *context, Program *newProgram);
     Program *getProgram() const;
 
     // Transform feedback object (not buffer) binding manipulation
-    void setTransformFeedbackBinding(TransformFeedback *transformFeedback);
+    void setTransformFeedbackBinding(const Context *context, TransformFeedback *transformFeedback);
     TransformFeedback *getCurrentTransformFeedback() const;
     bool isTransformFeedbackActiveUnpaused() const;
-    bool removeTransformFeedbackBinding(GLuint transformFeedback);
+    bool removeTransformFeedbackBinding(const Context *context, GLuint transformFeedback);
 
     // Query binding manipulation
-    bool isQueryActive(const GLenum type) const;
+    bool isQueryActive(QueryType type) const;
     bool isQueryActive(Query *query) const;
-    void setActiveQuery(GLenum target, Query *query);
-    GLuint getActiveQueryId(GLenum target) const;
-    Query *getActiveQuery(GLenum target) const;
+    void setActiveQuery(const Context *context, QueryType type, Query *query);
+    GLuint getActiveQueryId(QueryType type) const;
+    Query *getActiveQuery(QueryType type) const;
+
+    // Program Pipeline binding manipulation
+    void setProgramPipelineBinding(const Context *context, ProgramPipeline *pipeline);
+    void detachProgramPipeline(const Context *context, GLuint pipeline);
 
     //// Typed buffer binding point manipulation ////
-    // GL_ARRAY_BUFFER
-    void setArrayBufferBinding(Buffer *buffer);
-    GLuint getArrayBufferId() const;
+    void setBufferBinding(const Context *context, BufferBinding target, Buffer *buffer);
+    Buffer *getTargetBuffer(BufferBinding target) const;
+    void setIndexedBufferBinding(const Context *context,
+                                 BufferBinding target,
+                                 GLuint index,
+                                 Buffer *buffer,
+                                 GLintptr offset,
+                                 GLsizeiptr size);
 
-    // GL_UNIFORM_BUFFER - Both indexed and generic targets
-    void setGenericUniformBufferBinding(Buffer *buffer);
-    void setIndexedUniformBufferBinding(GLuint index, Buffer *buffer, GLintptr offset, GLsizeiptr size);
     const OffsetBindingPointer<Buffer> &getIndexedUniformBuffer(size_t index) const;
+    const OffsetBindingPointer<Buffer> &getIndexedAtomicCounterBuffer(size_t index) const;
+    const OffsetBindingPointer<Buffer> &getIndexedShaderStorageBuffer(size_t index) const;
 
-    // GL_COPY_[READ/WRITE]_BUFFER
-    void setCopyReadBufferBinding(Buffer *buffer);
-    void setCopyWriteBufferBinding(Buffer *buffer);
-
-    // GL_PIXEL[PACK/UNPACK]_BUFFER
-    void setPixelPackBufferBinding(Buffer *buffer);
-    void setPixelUnpackBufferBinding(Buffer *buffer);
-
-    // Retrieve typed buffer by target (non-indexed)
-    Buffer *getTargetBuffer(GLenum target) const;
     // Detach a buffer from all bindings
-    void detachBuffer(GLuint bufferName);
+    void detachBuffer(const Context *context, const Buffer *buffer);
 
     // Vertex attrib manipulation
     void setEnableVertexAttribArray(unsigned int attribNum, bool enabled);
+    void setElementArrayBuffer(const Context *context, Buffer *buffer);
     void setVertexAttribf(GLuint index, const GLfloat values[4]);
     void setVertexAttribu(GLuint index, const GLuint values[4]);
     void setVertexAttribi(GLuint index, const GLint values[4]);
-    void setVertexAttribState(unsigned int attribNum, Buffer *boundBuffer, GLint size, GLenum type,
-                              bool normalized, bool pureInteger, GLsizei stride, const void *pointer);
-    void setVertexAttribDivisor(GLuint index, GLuint divisor);
-    const VertexAttribCurrentValueData &getVertexAttribCurrentValue(unsigned int attribNum) const;
+    void setVertexAttribPointer(const Context *context,
+                                unsigned int attribNum,
+                                Buffer *boundBuffer,
+                                GLint size,
+                                GLenum type,
+                                bool normalized,
+                                bool pureInteger,
+                                GLsizei stride,
+                                const void *pointer);
+    void setVertexAttribDivisor(const Context *context, GLuint index, GLuint divisor);
+    const VertexAttribCurrentValueData &getVertexAttribCurrentValue(size_t attribNum) const;
+    const std::vector<VertexAttribCurrentValueData> &getVertexAttribCurrentValues() const;
     const void *getVertexAttribPointer(unsigned int attribNum) const;
+    void bindVertexBuffer(const Context *context,
+                          GLuint bindingIndex,
+                          Buffer *boundBuffer,
+                          GLintptr offset,
+                          GLsizei stride);
+    void setVertexAttribFormat(GLuint attribIndex,
+                               GLint size,
+                               GLenum type,
+                               bool normalized,
+                               bool pureInteger,
+                               GLuint relativeOffset);
+    void setVertexAttribBinding(const Context *context, GLuint attribIndex, GLuint bindingIndex);
+    void setVertexBindingDivisor(GLuint bindingIndex, GLuint divisor);
 
     // Pixel pack state manipulation
     void setPackAlignment(GLint alignment);
@@ -298,13 +334,17 @@ class State : angle::NonCopyable
     // State query functions
     void getBooleanv(GLenum pname, GLboolean *params);
     void getFloatv(GLenum pname, GLfloat *params);
-    void getIntegerv(const ContextState &data, GLenum pname, GLint *params);
-    void getPointerv(GLenum pname, void **params) const;
+    Error getIntegerv(const Context *context, GLenum pname, GLint *params);
+    void getPointerv(const Context *context, GLenum pname, void **params) const;
     void getIntegeri_v(GLenum target, GLuint index, GLint *data);
     void getInteger64i_v(GLenum target, GLuint index, GLint64 *data);
     void getBooleani_v(GLenum target, GLuint index, GLboolean *data);
 
-    bool hasMappedBuffer(GLenum target) const;
+    bool hasMappedBuffer(BufferBinding target) const;
+    bool isRobustResourceInitEnabled() const { return mRobustResourceInit; }
+
+    // Sets the dirty bit for the program executable.
+    void onProgramExecutableChange(Program *program);
 
     enum DirtyBitType
     {
@@ -320,6 +360,8 @@ class State : angle::NonCopyable
         DIRTY_BIT_SAMPLE_ALPHA_TO_COVERAGE_ENABLED,
         DIRTY_BIT_SAMPLE_COVERAGE_ENABLED,
         DIRTY_BIT_SAMPLE_COVERAGE,
+        DIRTY_BIT_SAMPLE_MASK_ENABLED,
+        DIRTY_BIT_SAMPLE_MASK,
         DIRTY_BIT_DEPTH_TEST_ENABLED,
         DIRTY_BIT_DEPTH_FUNC,
         DIRTY_BIT_DEPTH_MASK,
@@ -341,18 +383,9 @@ class State : angle::NonCopyable
         DIRTY_BIT_CLEAR_COLOR,
         DIRTY_BIT_CLEAR_DEPTH,
         DIRTY_BIT_CLEAR_STENCIL,
-        DIRTY_BIT_UNPACK_ALIGNMENT,
-        DIRTY_BIT_UNPACK_ROW_LENGTH,
-        DIRTY_BIT_UNPACK_IMAGE_HEIGHT,
-        DIRTY_BIT_UNPACK_SKIP_IMAGES,
-        DIRTY_BIT_UNPACK_SKIP_ROWS,
-        DIRTY_BIT_UNPACK_SKIP_PIXELS,
+        DIRTY_BIT_UNPACK_STATE,
         DIRTY_BIT_UNPACK_BUFFER_BINDING,
-        DIRTY_BIT_PACK_ALIGNMENT,
-        DIRTY_BIT_PACK_REVERSE_ROW_ORDER,
-        DIRTY_BIT_PACK_ROW_LENGTH,
-        DIRTY_BIT_PACK_SKIP_ROWS,
-        DIRTY_BIT_PACK_SKIP_PIXELS,
+        DIRTY_BIT_PACK_STATE,
         DIRTY_BIT_PACK_BUFFER_BINDING,
         DIRTY_BIT_DITHER_ENABLED,
         DIRTY_BIT_GENERATE_MIPMAP_HINT,
@@ -361,7 +394,17 @@ class State : angle::NonCopyable
         DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING,
         DIRTY_BIT_RENDERBUFFER_BINDING,
         DIRTY_BIT_VERTEX_ARRAY_BINDING,
+        DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING,
+        DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING,
+        DIRTY_BIT_SHADER_STORAGE_BUFFER_BINDING,
+        // TODO(jmadill): Fine-grained dirty bits for each index.
+        DIRTY_BIT_UNIFORM_BUFFER_BINDINGS,
         DIRTY_BIT_PROGRAM_BINDING,
+        DIRTY_BIT_PROGRAM_EXECUTABLE,
+        // TODO(jmadill): Fine-grained dirty bits for each texture/sampler.
+        DIRTY_BIT_TEXTURE_BINDINGS,
+        DIRTY_BIT_SAMPLER_BINDINGS,
+        DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING,
         DIRTY_BIT_MULTISAMPLING,
         DIRTY_BIT_SAMPLE_ALPHA_TO_ONE,
         DIRTY_BIT_COVERAGE_MODULATION,         // CHROMIUM_framebuffer_mixed_samples
@@ -369,11 +412,12 @@ class State : angle::NonCopyable
         DIRTY_BIT_PATH_RENDERING_MATRIX_PROJ,  // CHROMIUM_path_rendering path projection matrix
         DIRTY_BIT_PATH_RENDERING_STENCIL_STATE,
         DIRTY_BIT_FRAMEBUFFER_SRGB,  // GL_EXT_sRGB_write_control
-        DIRTY_BIT_CURRENT_VALUE_0,
-        DIRTY_BIT_CURRENT_VALUE_MAX = DIRTY_BIT_CURRENT_VALUE_0 + MAX_VERTEX_ATTRIBS,
-        DIRTY_BIT_INVALID           = DIRTY_BIT_CURRENT_VALUE_MAX,
-        DIRTY_BIT_MAX               = DIRTY_BIT_INVALID,
+        DIRTY_BIT_CURRENT_VALUES,
+        DIRTY_BIT_INVALID,
+        DIRTY_BIT_MAX = DIRTY_BIT_INVALID,
     };
+
+    static_assert(DIRTY_BIT_MAX <= 64, "State dirty bits must be capped at 64");
 
     // TODO(jmadill): Consider storing dirty objects in a list instead of by binding.
     enum DirtyObjectType
@@ -381,32 +425,68 @@ class State : angle::NonCopyable
         DIRTY_OBJECT_READ_FRAMEBUFFER,
         DIRTY_OBJECT_DRAW_FRAMEBUFFER,
         DIRTY_OBJECT_VERTEX_ARRAY,
-        DIRTY_OBJECT_PROGRAM,
+        // Use a very coarse bit for any program or texture change.
+        // TODO(jmadill): Fine-grained dirty bits for each texture/sampler.
+        DIRTY_OBJECT_PROGRAM_TEXTURES,
         DIRTY_OBJECT_UNKNOWN,
         DIRTY_OBJECT_MAX = DIRTY_OBJECT_UNKNOWN,
     };
 
-    typedef std::bitset<DIRTY_BIT_MAX> DirtyBits;
+    using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
     const DirtyBits &getDirtyBits() const { return mDirtyBits; }
     void clearDirtyBits() { mDirtyBits.reset(); }
     void clearDirtyBits(const DirtyBits &bitset) { mDirtyBits &= ~bitset; }
     void setAllDirtyBits() { mDirtyBits.set(); }
 
-    typedef std::bitset<DIRTY_OBJECT_MAX> DirtyObjects;
+    using DirtyObjects = angle::BitSet<DIRTY_OBJECT_MAX>;
     void clearDirtyObjects() { mDirtyObjects.reset(); }
     void setAllDirtyObjects() { mDirtyObjects.set(); }
-    void syncDirtyObjects();
-    void syncDirtyObjects(const DirtyObjects &bitset);
-    void syncDirtyObject(GLenum target);
+    Error syncDirtyObjects(const Context *context);
+    Error syncDirtyObjects(const Context *context, const DirtyObjects &bitset);
+    Error syncDirtyObject(const Context *context, GLenum target);
     void setObjectDirty(GLenum target);
+    void setFramebufferDirty(const Framebuffer *framebuffer) const;
+    void setVertexArrayDirty(const VertexArray *vertexArray) const;
+
+    // This actually clears the current value dirty bits.
+    // TODO(jmadill): Pass mutable dirty bits into Impl.
+    AttributesMask getAndResetDirtyCurrentValues() const;
+
+    void setImageUnit(const Context *context,
+                      GLuint unit,
+                      Texture *texture,
+                      GLint level,
+                      GLboolean layered,
+                      GLint layer,
+                      GLenum access,
+                      GLenum format);
+
+    const ImageUnit &getImageUnit(GLuint unit) const;
+    const std::vector<Texture *> &getCompleteTextureCache() const { return mCompleteTextureCache; }
+    ComponentTypeMask getCurrentValuesTypeMask() const { return mCurrentValuesTypeMask; }
+
+    // Observer implementation.
+    void onSubjectStateChange(const Context *context,
+                              angle::SubjectIndex index,
+                              angle::SubjectMessage message) override;
+
+    Error clearUnclearedActiveTextures(const Context *context);
+
+    bool isCurrentTransformFeedback(const TransformFeedback *tf) const;
+    bool isCurrentVertexArray(const VertexArray *va) const;
+
+    GLES1State &gles1() { return mGLES1State; }
+    const GLES1State &gles1() const { return mGLES1State; }
 
   private:
+    Error syncProgramTextures(const Context *context);
+
     // Cached values from Context's caps
     GLuint mMaxDrawBuffers;
     GLuint mMaxCombinedTextureImageUnits;
 
     ColorF mColorClearValue;
-    GLclampf mDepthClearValue;
+    GLfloat mDepthClearValue;
     int mStencilClearValue;
 
     RasterizerState mRasterizer;
@@ -416,8 +496,11 @@ class State : angle::NonCopyable
     BlendState mBlend;
     ColorF mBlendColor;
     bool mSampleCoverage;
-    GLclampf mSampleCoverageValue;
+    GLfloat mSampleCoverageValue;
     bool mSampleCoverageInvert;
+    bool mSampleMask;
+    GLuint mMaxSampleMaskWords;
+    std::array<GLbitfield, MAX_SAMPLE_MASK_WORDS> mSampleMaskValues;
 
     DepthStencilState mDepthStencil;
     GLint mStencilRef;
@@ -429,42 +512,71 @@ class State : angle::NonCopyable
     GLenum mFragmentShaderDerivativeHint;
 
     bool mBindGeneratesResource;
+    bool mClientArraysEnabled;
 
     Rectangle mViewport;
     float mNearZ;
     float mFarZ;
 
-    BindingPointer<Buffer> mArrayBuffer;
     Framebuffer *mReadFramebuffer;
     Framebuffer *mDrawFramebuffer;
     BindingPointer<Renderbuffer> mRenderbuffer;
     Program *mProgram;
+    BindingPointer<ProgramPipeline> mProgramPipeline;
 
-    typedef std::vector<VertexAttribCurrentValueData> VertexAttribVector;
-    VertexAttribVector mVertexAttribCurrentValues; // From glVertexAttrib
+    using VertexAttribVector = std::vector<VertexAttribCurrentValueData>;
+    VertexAttribVector mVertexAttribCurrentValues;  // From glVertexAttrib
     VertexArray *mVertexArray;
+    ComponentTypeMask mCurrentValuesTypeMask;
 
     // Texture and sampler bindings
-    size_t mActiveSampler;   // Active texture unit selector - GL_TEXTURE0
+    size_t mActiveSampler;  // Active texture unit selector - GL_TEXTURE0
 
-    typedef std::vector<BindingPointer<Texture>> TextureBindingVector;
-    typedef std::map<GLenum, TextureBindingVector> TextureBindingMap;
+    using TextureBindingVector = std::vector<BindingPointer<Texture>>;
+    using TextureBindingMap    = angle::PackedEnumMap<TextureType, TextureBindingVector>;
     TextureBindingMap mSamplerTextures;
 
-    typedef std::vector<BindingPointer<Sampler>> SamplerBindingVector;
+    // Texture Completeness Caching
+    // ----------------------------
+    // The texture completeness cache uses dirty bits to avoid having to scan the list of textures
+    // each draw call. This gl::State class implements angle::Observer interface. When subject
+    // Textures have state changes, messages reach 'State' (also any observing Framebuffers) via the
+    // onSubjectStateChange method (above). This then invalidates the completeness cache.
+    //
+    // Note this requires that we also invalidate the completeness cache manually on events like
+    // re-binding textures/samplers or a change in the program. For more information see the
+    // Observer.h header and the design doc linked there.
+
+    // A cache of complete textures. nullptr indicates unbound or incomplete.
+    // Don't use BindingPointer because this cache is only valid within a draw call.
+    // Also stores a notification channel to the texture itself to handle texture change events.
+    std::vector<Texture *> mCompleteTextureCache;
+    std::vector<angle::ObserverBinding> mCompleteTextureBindings;
+    InitState mCachedTexturesInitState;
+    using ActiveTextureMask = angle::BitSet<IMPLEMENTATION_MAX_ACTIVE_TEXTURES>;
+    ActiveTextureMask mActiveTexturesMask;
+
+    using SamplerBindingVector = std::vector<BindingPointer<Sampler>>;
     SamplerBindingVector mSamplers;
 
-    typedef std::map<GLenum, BindingPointer<Query>> ActiveQueryMap;
+    using ImageUnitVector = std::vector<ImageUnit>;
+    ImageUnitVector mImageUnits;
+
+    using ActiveQueryMap = angle::PackedEnumMap<QueryType, BindingPointer<Query>>;
     ActiveQueryMap mActiveQueries;
 
-    BindingPointer<Buffer> mGenericUniformBuffer;
-    typedef std::vector<OffsetBindingPointer<Buffer>> BufferVector;
+    // Stores the currently bound buffer for each binding point. It has an entry for the element
+    // array buffer but it should not be used. Instead this bind point is owned by the current
+    // vertex array object.
+    using BoundBufferMap = angle::PackedEnumMap<BufferBinding, BindingPointer<Buffer>>;
+    BoundBufferMap mBoundBuffers;
+
+    using BufferVector = std::vector<OffsetBindingPointer<Buffer>>;
     BufferVector mUniformBuffers;
+    BufferVector mAtomicCounterBuffers;
+    BufferVector mShaderStorageBuffers;
 
     BindingPointer<TransformFeedback> mTransformFeedback;
-
-    BindingPointer<Buffer> mCopyReadBuffer;
-    BindingPointer<Buffer> mCopyWriteBuffer;
 
     PixelUnpackState mUnpack;
     PixelPackState mPack;
@@ -488,10 +600,20 @@ class State : angle::NonCopyable
     // GL_EXT_sRGB_write_control
     bool mFramebufferSRGB;
 
+    // GL_ANGLE_robust_resource_intialization
+    bool mRobustResourceInit;
+
+    // GL_ANGLE_program_cache_control
+    bool mProgramBinaryCacheEnabled;
+
+    // GLES1 emulation: state specific to GLES1
+    GLES1State mGLES1State;
+
     DirtyBits mDirtyBits;
-    DirtyObjects mDirtyObjects;
+    mutable DirtyObjects mDirtyObjects;
+    mutable AttributesMask mDirtyCurrentValues;
 };
 
 }  // namespace gl
 
-#endif // LIBANGLE_STATE_H_
+#endif  // LIBANGLE_STATE_H_

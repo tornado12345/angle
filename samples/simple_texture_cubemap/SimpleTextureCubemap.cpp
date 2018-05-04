@@ -17,40 +17,35 @@
 #include "shader_utils.h"
 #include "texture_utils.h"
 #include "geometry_utils.h"
-#include "Vector.h"
 
 class SimpleTextureCubemapSample : public SampleApplication
 {
   public:
-    SimpleTextureCubemapSample()
-        : SampleApplication("SimpleTextureCubemap", 1280, 720)
+    SimpleTextureCubemapSample(EGLint displayType)
+        : SampleApplication("SimpleTextureCubemap", 1280, 720, 2, 0, displayType)
     {
     }
 
     virtual bool initialize()
     {
-        const std::string vs = SHADER_SOURCE
-        (
-            attribute vec4 a_position;
+        const std::string vs =
+            R"(attribute vec4 a_position;
             attribute vec3 a_normal;
             varying vec3 v_normal;
             void main()
             {
                 gl_Position = a_position;
                 v_normal = a_normal;
-            }
-        );
+            })";
 
-        const std::string fs = SHADER_SOURCE
-        (
-            precision mediump float;
+        const std::string fs =
+            R"(precision mediump float;
             varying vec3 v_normal;
             uniform samplerCube s_texture;
             void main()
             {
                 gl_FragColor = textureCube(s_texture, v_normal);
-            }
-        );
+            })";
 
         mProgram = CompileProgram(vs, fs);
         if (!mProgram)
@@ -134,6 +129,13 @@ class SimpleTextureCubemapSample : public SampleApplication
 
 int main(int argc, char **argv)
 {
-    SimpleTextureCubemapSample app;
+    EGLint displayType = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
+
+    if (argc > 1)
+    {
+        displayType = GetDisplayTypeFromArg(argv[1]);
+    }
+
+    SimpleTextureCubemapSample app(displayType);
     return app.run();
 }

@@ -16,6 +16,26 @@
 namespace gl
 {
 
+Debug::Control::Control()
+{
+}
+
+Debug::Control::~Control()
+{
+}
+
+Debug::Control::Control(const Control &other) = default;
+
+Debug::Group::Group()
+{
+}
+
+Debug::Group::~Group()
+{
+}
+
+Debug::Group::Group(const Group &other) = default;
+
 Debug::Debug()
     : mOutputEnabled(false),
       mCallbackFunction(nullptr),
@@ -26,6 +46,10 @@ Debug::Debug()
       mGroups()
 {
     pushDefaultGroup();
+}
+
+Debug::~Debug()
+{
 }
 
 void Debug::setMaxLoggedMessages(GLuint maxLoggedMessages)
@@ -73,7 +97,7 @@ void Debug::insertMessage(GLenum source,
                           GLenum type,
                           GLuint id,
                           GLenum severity,
-                          const std::string &message)
+                          const std::string &message) const
 {
     std::string messageCopy(message);
     insertMessage(source, type, id, severity, std::move(messageCopy));
@@ -83,7 +107,7 @@ void Debug::insertMessage(GLenum source,
                           GLenum type,
                           GLuint id,
                           GLenum severity,
-                          std::string &&message)
+                          std::string &&message) const
 {
     if (!isMessageEnabled(source, type, id, severity))
     {

@@ -14,13 +14,16 @@
 //            http://www.opengles-book.com
 
 #include "SampleApplication.h"
-#include "Vector.h"
+
+#include "common/vector_utils.h"
 #include "shader_utils.h"
 #include "texture_utils.h"
 
 #include <cstring>
 #include <iostream>
 #include <vector>
+
+using namespace angle;
 
 class SimpleInstancingSample : public SampleApplication
 {
@@ -47,9 +50,8 @@ class SimpleInstancingSample : public SampleApplication
             return false;
         }
 
-        const std::string vs = SHADER_SOURCE
-        (
-            attribute vec3 a_position;
+        const std::string vs =
+            R"(attribute vec3 a_position;
             attribute vec2 a_texCoord;
             attribute vec3 a_instancePos;
             varying vec2 v_texCoord;
@@ -57,19 +59,16 @@ class SimpleInstancingSample : public SampleApplication
             {
                 gl_Position = vec4(a_position.xyz + a_instancePos.xyz, 1.0);
                 v_texCoord = a_texCoord;
-            }
-        );
+            })";
 
-        const std::string fs = SHADER_SOURCE
-        (
-            precision mediump float;
+        const std::string fs =
+            R"(precision mediump float;
             varying vec2 v_texCoord;
             uniform sampler2D s_texture;
             void main()
             {
                 gl_FragColor = texture2D(s_texture, v_texCoord);
-            }
-        );
+            })";
 
         mProgram = CompileProgram(vs, fs);
         if (!mProgram)

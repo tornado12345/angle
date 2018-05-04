@@ -14,6 +14,9 @@
 #include "compiler/preprocessor/Token.h"
 #include "compiler/preprocessor/Tokenizer.h"
 
+namespace angle
+{
+
 namespace pp
 {
 
@@ -25,19 +28,26 @@ struct PreprocessorImpl
     DirectiveParser directiveParser;
     MacroExpander macroExpander;
 
-    PreprocessorImpl(Diagnostics *diag, DirectiveHandler *directiveHandler)
+    PreprocessorImpl(Diagnostics *diag,
+                     DirectiveHandler *directiveHandler,
+                     const PreprocessorSettings &settings)
         : diagnostics(diag),
           tokenizer(diag),
-          directiveParser(&tokenizer, &macroSet, diag, directiveHandler),
-          macroExpander(&directiveParser, &macroSet, diag)
+          directiveParser(&tokenizer,
+                          &macroSet,
+                          diag,
+                          directiveHandler,
+                          settings.maxMacroExpansionDepth),
+          macroExpander(&directiveParser, &macroSet, diag, settings.maxMacroExpansionDepth)
     {
     }
 };
 
 Preprocessor::Preprocessor(Diagnostics *diagnostics,
-                           DirectiveHandler *directiveHandler)
+                           DirectiveHandler *directiveHandler,
+                           const PreprocessorSettings &settings)
 {
-    mImpl = new PreprocessorImpl(diagnostics, directiveHandler);
+    mImpl = new PreprocessorImpl(diagnostics, directiveHandler, settings);
 }
 
 Preprocessor::~Preprocessor()
@@ -45,9 +55,7 @@ Preprocessor::~Preprocessor()
     delete mImpl;
 }
 
-bool Preprocessor::init(size_t count,
-                        const char * const string[],
-                        const int length[])
+bool Preprocessor::init(size_t count, const char *const string[], const int length[])
 {
     static const int kDefaultGLSLVersion = 100;
 
@@ -73,23 +81,23 @@ void Preprocessor::lex(Token *token)
         mImpl->macroExpander.lex(token);
         switch (token->type)
         {
-          // We should not be returning internal preprocessing tokens.
-          // Convert preprocessing tokens to compiler tokens or report
-          // diagnostics.
-          case Token::PP_HASH:
-              UNREACHABLE();
-              break;
-          case Token::PP_NUMBER:
-            mImpl->diagnostics->report(Diagnostics::PP_INVALID_NUMBER,
-                                       token->location, token->text);
-            break;
-          case Token::PP_OTHER:
-            mImpl->diagnostics->report(Diagnostics::PP_INVALID_CHARACTER,
-                                       token->location, token->text);
-            break;
-          default:
-            validToken = true;
-            break;
+            // We should not be returning internal preprocessing tokens.
+            // Convert preprocessing tokens to compiler tokens or report
+            // diagnostics.
+            case Token::PP_HASH:
+                UNREACHABLE();
+                break;
+            case Token::PP_NUMBER:
+                mImpl->diagnostics->report(Diagnostics::PP_INVALID_NUMBER, token->location,
+                                           token->text);
+                break;
+            case Token::PP_OTHER:
+                mImpl->diagnostics->report(Diagnostics::PP_INVALID_CHARACTER, token->location,
+                                           token->text);
+                break;
+            default:
+                validToken = true;
+                break;
         }
     }
 }
@@ -100,3 +108,5 @@ void Preprocessor::setMaxTokenSize(size_t maxTokenSize)
 }
 
 }  // namespace pp
+
+}  // namespace angle

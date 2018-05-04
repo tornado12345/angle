@@ -68,6 +68,9 @@ class SRGBTextureTest : public ANGLETest
 
 TEST_P(SRGBTextureTest, SRGBValidation)
 {
+    // TODO(fjhenigman): Figure out why this fails on Ozone Intel.
+    ANGLE_SKIP_TEST_IF(IsOzone() && IsIntel() && IsOpenGLES());
+
     bool supported = extensionEnabled("GL_EXT_sRGB") || getClientMajorVersion() == 3;
 
     GLuint tex = 0;
@@ -96,6 +99,9 @@ TEST_P(SRGBTextureTest, SRGBValidation)
 
 TEST_P(SRGBTextureTest, SRGBAValidation)
 {
+    // TODO(fjhenigman): Figure out why this fails on Ozone Intel.
+    ANGLE_SKIP_TEST_IF(IsOzone() && IsIntel() && IsOpenGLES());
+
     bool supported = extensionEnabled("GL_EXT_sRGB") || getClientMajorVersion() == 3;
 
     GLuint tex = 0;
@@ -112,14 +118,7 @@ TEST_P(SRGBTextureTest, SRGBAValidation)
         EXPECT_GL_NO_ERROR();
 
         glGenerateMipmap(GL_TEXTURE_2D);
-        if (getClientMajorVersion() == 2)
-        {
-            EXPECT_GL_ERROR(GL_INVALID_OPERATION);
-        }
-        else
-        {
-            EXPECT_GL_NO_ERROR();
-        }
+        EXPECT_GL_ERROR(GL_INVALID_OPERATION);
     }
     else
     {
@@ -127,6 +126,30 @@ TEST_P(SRGBTextureTest, SRGBAValidation)
     }
 
     glDeleteTextures(1, &tex);
+}
+
+// Test that sized SRGBA formats allow generating mipmaps
+TEST_P(SRGBTextureTest, SRGBASizedValidation)
+{
+    // TODO(fjhenigman): Figure out why this fails on Ozone Intel.
+    ANGLE_SKIP_TEST_IF(IsOzone() && IsIntel() && IsOpenGLES());
+
+    // ES3 required for sized SRGB textures
+    ANGLE_SKIP_TEST_IF(getClientMajorVersion() < 3);
+
+    GLTexture tex;
+    glBindTexture(GL_TEXTURE_2D, tex);
+
+    GLubyte pixel[4] = {0};
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+
+    EXPECT_GL_NO_ERROR();
+
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    EXPECT_GL_NO_ERROR();
+
+    glGenerateMipmap(GL_TEXTURE_2D);
+    EXPECT_GL_NO_ERROR();
 }
 
 TEST_P(SRGBTextureTest, SRGBARenderbuffer)
@@ -188,12 +211,10 @@ TEST_P(SRGBTextureTest, SRGBDecodeExtensionAvailability)
 // Test basic functionality of SRGB decode using the texture parameter
 TEST_P(SRGBTextureTest, SRGBDecodeTextureParameter)
 {
-    if (!extensionEnabled("GL_EXT_texture_sRGB_decode"))
-    {
-        std::cout << "Test skipped because GL_EXT_texture_sRGB_decode is not available."
-                  << std::endl;
-        return;
-    }
+    // TODO(fjhenigman): Figure out why this fails on Ozone Intel.
+    ANGLE_SKIP_TEST_IF(IsOzone() && IsIntel() && IsOpenGLES());
+
+    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_EXT_texture_sRGB_decode"));
 
     GLColor linearColor(64, 127, 191, 255);
     GLColor srgbColor(13, 54, 133, 255);
@@ -222,12 +243,8 @@ TEST_P(SRGBTextureTest, SRGBDecodeTextureParameter)
 // Test basic functionality of SRGB decode using the sampler parameter
 TEST_P(SRGBTextureTest, SRGBDecodeSamplerParameter)
 {
-    if (!extensionEnabled("GL_EXT_texture_sRGB_decode") || getClientMajorVersion() < 3)
-    {
-        std::cout << "Test skipped because GL_EXT_texture_sRGB_decode or ES3 is not available."
-                  << std::endl;
-        return;
-    }
+    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_EXT_texture_sRGB_decode") ||
+                       getClientMajorVersion() < 3);
 
     GLColor linearColor(64, 127, 191, 255);
     GLColor srgbColor(13, 54, 133, 255);
@@ -255,6 +272,66 @@ TEST_P(SRGBTextureTest, SRGBDecodeSamplerParameter)
 
     EXPECT_PIXEL_COLOR_NEAR(0, 0, linearColor, 1.0);
 }
+
+// Test that mipmaps are generated correctly for sRGB textures
+TEST_P(SRGBTextureTest, GenerateMipmaps)
+{
+    ANGLE_SKIP_TEST_IF(getClientMajorVersion() < 3);
+
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && ((IsIntel() && IsOSX()) || IsAMD()));
+
+    auto createAndReadBackTexture = [this](GLenum internalFormat, const GLColor &color) {
+        constexpr GLsizei width  = 128;
+        constexpr GLsizei height = 128;
+
+        std::array<GLColor, width * height> buf;
+        std::fill(buf.begin(), buf.end(), color);
+
+        // Set up-left region of the texture as red color.
+        // In order to make sure bi-linear interpolation operates on different colors, red region
+        // is 1 pixel smaller than a quarter of the full texture on each side.
+        constexpr GLsizei redWidth  = width / 2 - 1;
+        constexpr GLsizei redHeight = height / 2 - 1;
+        std::array<GLColor, redWidth * redHeight> redBuf;
+        std::fill(redBuf.begin(), redBuf.end(), GLColor::red);
+
+        GLTexture tex;
+        glBindTexture(GL_TEXTURE_2D, tex.get());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     buf.data());
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, redWidth, redHeight, GL_RGBA, GL_UNSIGNED_BYTE,
+                        redBuf.data());
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        constexpr GLsizei drawWidth  = 32;
+        constexpr GLsizei drawHeight = 32;
+        glViewport(0, 0, drawWidth, drawHeight);
+
+        drawQuad(mProgram, "position", 0.5f);
+
+        std::array<GLColor, drawWidth * drawHeight> result;
+        glReadPixels(0, 0, drawWidth, drawHeight, GL_RGBA, GL_UNSIGNED_BYTE, result.data());
+
+        EXPECT_GL_NO_ERROR();
+
+        return result;
+    };
+
+    GLColor srgbaColor(0, 63, 127, 255);
+    auto srgbaReadback = createAndReadBackTexture(GL_SRGB8_ALPHA8, srgbaColor);
+
+    GLColor linearColor(0, 13, 54, 255);
+    auto rgbaReadback = createAndReadBackTexture(GL_RGBA8, linearColor);
+
+    ASSERT_EQ(srgbaReadback.size(), rgbaReadback.size());
+    for (size_t i = 0; i < srgbaReadback.size(); i++)
+    {
+        constexpr double tolerence = 7.0;
+        EXPECT_COLOR_NEAR(srgbaReadback[i], rgbaReadback[i], tolerence);
+    }
+}
+
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these tests should be run against.
 ANGLE_INSTANTIATE_TEST(SRGBTextureTest,
                        ES2_D3D9(),

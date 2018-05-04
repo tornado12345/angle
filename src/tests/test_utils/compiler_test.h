@@ -10,12 +10,17 @@
 #define TESTS_TEST_UTILS_COMPILER_TEST_H_
 
 #include <map>
+#include <vector>
 
 #include "gtest/gtest.h"
 
+#include "GLSLANG/ShaderLang.h"
 #include "angle_gl.h"
 #include "compiler/translator/TranslatorESSL.h"
-#include "GLSLANG/ShaderLang.h"
+#include "compiler/translator/tree_util/FindSymbolNode.h"
+
+namespace sh
+{
 
 bool compileTestShader(GLenum type,
                        ShShaderSpec spec,
@@ -61,6 +66,9 @@ class MatchOutputCodeTest : public testing::Test
 
     bool foundInCode(ShShaderOutput output, const char *stringToFind) const;
 
+    // Test that the strings are found in the specified output in the specified order.
+    bool foundInCodeInOrder(ShShaderOutput output, std::vector<const char *> stringsToFind);
+
     // Test that the string occurs for exactly expectedOccurrences times
     bool foundInCode(ShShaderOutput output,
                      const char *stringToFind,
@@ -71,6 +79,9 @@ class MatchOutputCodeTest : public testing::Test
 
     // Test that the string occurs for exactly expectedOccurrences times in all outputs
     bool foundInCode(const char *stringToFind, const int expectedOccurrences) const;
+
+    // Test that the strings are found in all outputs in the specified order.
+    bool foundInCodeInOrder(std::vector<const char *> stringsToFind);
 
     // Test that the string is found in none of the outputs
     bool notFoundInCode(const char *stringToFind) const;
@@ -89,11 +100,8 @@ class MatchOutputCodeTest : public testing::Test
     std::map<ShShaderOutput, std::string> mOutputCode;
 };
 
-const TIntermSymbol *FindSymbolNode(TIntermNode *root,
-                                    const TString &symbolName,
-                                    TBasicType basicType);
-
 // Returns a pointer to a function call node with a mangled name functionName.
 const TIntermAggregate *FindFunctionCallNode(TIntermNode *root, const TString &functionName);
+}
 
 #endif // TESTS_TEST_UTILS_COMPILER_TEST_H_

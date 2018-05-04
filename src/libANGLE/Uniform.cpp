@@ -13,46 +13,97 @@
 namespace gl
 {
 
+ActiveVariable::ActiveVariable()
+{
+}
+
+ActiveVariable::~ActiveVariable()
+{
+}
+
+ActiveVariable::ActiveVariable(const ActiveVariable &rhs) = default;
+ActiveVariable &ActiveVariable::operator=(const ActiveVariable &rhs) = default;
+
+void ActiveVariable::setActive(ShaderType shaderType, bool used)
+{
+    ASSERT(shaderType != ShaderType::InvalidEnum);
+    mActiveUseBits.set(shaderType, used);
+}
+
+bool ActiveVariable::isActive(ShaderType shaderType) const
+{
+    ASSERT(shaderType != ShaderType::InvalidEnum);
+    return mActiveUseBits[shaderType];
+}
+
+void ActiveVariable::unionReferencesWith(const ActiveVariable &other)
+{
+    mActiveUseBits |= other.mActiveUseBits;
+}
+
+ShaderType ActiveVariable::getFirstShaderTypeWhereActive() const
+{
+    return static_cast<ShaderType>(gl::ScanForward(mActiveUseBits.bits()));
+}
+
+GLuint ActiveVariable::activeShaderCount() const
+{
+    return static_cast<GLuint>(mActiveUseBits.count());
+}
+
 LinkedUniform::LinkedUniform()
-    : blockIndex(-1), blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo())
+    : typeInfo(nullptr), bufferIndex(-1), blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo())
 {
 }
 
 LinkedUniform::LinkedUniform(GLenum typeIn,
                              GLenum precisionIn,
                              const std::string &nameIn,
-                             unsigned int arraySizeIn,
-                             const int blockIndexIn,
+                             const std::vector<unsigned int> &arraySizesIn,
+                             const int bindingIn,
+                             const int offsetIn,
+                             const int locationIn,
+                             const int bufferIndexIn,
                              const sh::BlockMemberInfo &blockInfoIn)
-    : blockIndex(blockIndexIn), blockInfo(blockInfoIn)
+    : typeInfo(&GetUniformTypeInfo(typeIn)), bufferIndex(bufferIndexIn), blockInfo(blockInfoIn)
 {
     type      = typeIn;
     precision = precisionIn;
     name      = nameIn;
-    arraySize = arraySizeIn;
+    arraySizes = arraySizesIn;
+    binding   = bindingIn;
+    offset    = offsetIn;
+    location  = locationIn;
+    ASSERT(!isArrayOfArrays());
+    ASSERT(!isArray() || !isStruct());
 }
 
 LinkedUniform::LinkedUniform(const sh::Uniform &uniform)
-    : sh::Uniform(uniform), blockIndex(-1), blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo())
+    : sh::Uniform(uniform),
+      typeInfo(&GetUniformTypeInfo(type)),
+      bufferIndex(-1),
+      blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo())
 {
+    ASSERT(!isArrayOfArrays());
+    ASSERT(!isArray() || !isStruct());
 }
 
 LinkedUniform::LinkedUniform(const LinkedUniform &uniform)
-    : sh::Uniform(uniform), blockIndex(uniform.blockIndex), blockInfo(uniform.blockInfo)
+    : sh::Uniform(uniform),
+      ActiveVariable(uniform),
+      typeInfo(uniform.typeInfo),
+      bufferIndex(uniform.bufferIndex),
+      blockInfo(uniform.blockInfo)
 {
-    // This function is not intended to be called during runtime.
-    ASSERT(uniform.mLazyData.empty());
 }
 
 LinkedUniform &LinkedUniform::operator=(const LinkedUniform &uniform)
 {
-    // This function is not intended to be called during runtime.
-    ASSERT(uniform.mLazyData.empty());
-
     sh::Uniform::operator=(uniform);
-    blockIndex           = uniform.blockIndex;
+    ActiveVariable::operator=(uniform);
+    typeInfo             = uniform.typeInfo;
+    bufferIndex          = uniform.bufferIndex;
     blockInfo            = uniform.blockInfo;
-
     return *this;
 }
 
@@ -62,41 +113,22 @@ LinkedUniform::~LinkedUniform()
 
 bool LinkedUniform::isInDefaultBlock() const
 {
-    return blockIndex == -1;
-}
-
-size_t LinkedUniform::dataSize() const
-{
-    ASSERT(type != GL_STRUCT_ANGLEX);
-    if (mLazyData.empty())
-    {
-        mLazyData.resize(VariableExternalSize(type) * elementCount());
-        ASSERT(!mLazyData.empty());
-    }
-
-    return mLazyData.size();
-}
-
-uint8_t *LinkedUniform::data()
-{
-    if (mLazyData.empty())
-    {
-        // dataSize() will init the data store.
-        size_t size = dataSize();
-        memset(mLazyData.data(), 0, size);
-    }
-
-    return mLazyData.data();
-}
-
-const uint8_t *LinkedUniform::data() const
-{
-    return const_cast<LinkedUniform *>(this)->data();
+    return bufferIndex == -1;
 }
 
 bool LinkedUniform::isSampler() const
 {
-    return IsSamplerType(type);
+    return typeInfo->isSampler;
+}
+
+bool LinkedUniform::isImage() const
+{
+    return typeInfo->isImageType;
+}
+
+bool LinkedUniform::isAtomicCounter() const
+{
+    return IsAtomicCounterType(type);
 }
 
 bool LinkedUniform::isField() const
@@ -106,45 +138,82 @@ bool LinkedUniform::isField() const
 
 size_t LinkedUniform::getElementSize() const
 {
-    return VariableExternalSize(type);
+    return typeInfo->externalSize;
 }
 
-uint8_t *LinkedUniform::getDataPtrToElement(size_t elementIndex)
+size_t LinkedUniform::getElementComponents() const
 {
-    ASSERT((!isArray() && elementIndex == 0) || (isArray() && elementIndex < arraySize));
-    return data() + getElementSize() * elementIndex;
+    return typeInfo->componentCount;
 }
 
-const uint8_t *LinkedUniform::getDataPtrToElement(size_t elementIndex) const
-{
-    return const_cast<LinkedUniform *>(this)->getDataPtrToElement(elementIndex);
-}
-
-UniformBlock::UniformBlock()
-    : isArray(false),
-      arrayElement(0),
-      dataSize(0),
-      vertexStaticUse(false),
-      fragmentStaticUse(false),
-      computeStaticUse(false)
+BufferVariable::BufferVariable()
+    : bufferIndex(-1), blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo()), topLevelArraySize(-1)
 {
 }
 
-UniformBlock::UniformBlock(const std::string &nameIn, bool isArrayIn, unsigned int arrayElementIn)
-    : name(nameIn),
-      isArray(isArrayIn),
-      arrayElement(arrayElementIn),
-      dataSize(0),
-      vertexStaticUse(false),
-      fragmentStaticUse(false),
-      computeStaticUse(false)
+BufferVariable::BufferVariable(GLenum typeIn,
+                               GLenum precisionIn,
+                               const std::string &nameIn,
+                               const std::vector<unsigned int> &arraySizesIn,
+                               const int bufferIndexIn,
+                               const sh::BlockMemberInfo &blockInfoIn)
+    : bufferIndex(bufferIndexIn), blockInfo(blockInfoIn), topLevelArraySize(-1)
+{
+    type      = typeIn;
+    precision = precisionIn;
+    name      = nameIn;
+    arraySizes = arraySizesIn;
+}
+
+BufferVariable::~BufferVariable()
 {
 }
 
-std::string UniformBlock::nameWithArrayIndex() const
+ShaderVariableBuffer::ShaderVariableBuffer() : binding(0), dataSize(0)
+{
+}
+
+ShaderVariableBuffer::ShaderVariableBuffer(const ShaderVariableBuffer &other) = default;
+
+ShaderVariableBuffer::~ShaderVariableBuffer()
+{
+}
+
+int ShaderVariableBuffer::numActiveVariables() const
+{
+    return static_cast<int>(memberIndexes.size());
+}
+
+InterfaceBlock::InterfaceBlock() : isArray(false), arrayElement(0)
+{
+}
+
+InterfaceBlock::InterfaceBlock(const std::string &nameIn,
+                               const std::string &mappedNameIn,
+                               bool isArrayIn,
+                               unsigned int arrayElementIn,
+                               int bindingIn)
+    : name(nameIn), mappedName(mappedNameIn), isArray(isArrayIn), arrayElement(arrayElementIn)
+{
+    binding = bindingIn;
+}
+
+std::string InterfaceBlock::nameWithArrayIndex() const
 {
     std::stringstream fullNameStr;
     fullNameStr << name;
+    if (isArray)
+    {
+        fullNameStr << "[" << arrayElement << "]";
+    }
+
+    return fullNameStr.str();
+}
+
+std::string InterfaceBlock::mappedNameWithArrayIndex() const
+{
+    std::stringstream fullNameStr;
+    fullNameStr << mappedName;
     if (isArray)
     {
         fullNameStr << "[" << arrayElement << "]";

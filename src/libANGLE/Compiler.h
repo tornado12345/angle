@@ -10,8 +10,10 @@
 #ifndef LIBANGLE_COMPILER_H_
 #define LIBANGLE_COMPILER_H_
 
-#include "libANGLE/Error.h"
 #include "GLSLANG/ShaderLang.h"
+#include "libANGLE/Error.h"
+#include "libANGLE/PackedEnums.h"
+#include "libANGLE/RefCountObject.h"
 
 namespace rx
 {
@@ -23,26 +25,23 @@ namespace gl
 {
 class ContextState;
 
-class Compiler final : angle::NonCopyable
+class Compiler final : public RefCountObjectNoID
 {
   public:
     Compiler(rx::GLImplFactory *implFactory, const ContextState &data);
-    ~Compiler();
 
-    Error release();
-
-    ShHandle getCompilerHandle(GLenum type);
+    ShHandle getCompilerHandle(ShaderType shaderType);
     ShShaderOutput getShaderOutputType() const { return mOutputType; }
+    const std::string &getBuiltinResourcesString(ShaderType type);
 
   private:
-    rx::CompilerImpl *mImplementation;
+    ~Compiler() override;
+    std::unique_ptr<rx::CompilerImpl> mImplementation;
     ShShaderSpec mSpec;
     ShShaderOutput mOutputType;
     ShBuiltInResources mResources;
 
-    ShHandle mFragmentCompiler;
-    ShHandle mVertexCompiler;
-    ShHandle mComputeCompiler;
+    ShaderMap<ShHandle> mShaderCompilers;
 };
 
 }  // namespace gl

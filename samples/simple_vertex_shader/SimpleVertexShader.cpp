@@ -14,10 +14,10 @@
 //            http://www.opengles-book.com
 
 #include "SampleApplication.h"
+
 #include "shader_utils.h"
 #include "texture_utils.h"
 #include "geometry_utils.h"
-#include "Vector.h"
 #include "Matrix.h"
 
 #include <cmath>
@@ -25,16 +25,15 @@
 class SimpleVertexShaderSample : public SampleApplication
 {
   public:
-    SimpleVertexShaderSample()
-        : SampleApplication("SimpleVertexShader", 1280, 720)
+    SimpleVertexShaderSample(EGLint displayType)
+        : SampleApplication("SimpleVertexShader", 1280, 720, 2, 0, displayType)
     {
     }
 
     virtual bool initialize()
     {
-        const std::string vs = SHADER_SOURCE
-        (
-            uniform mat4 u_mvpMatrix;
+        const std::string vs =
+            R"(uniform mat4 u_mvpMatrix;
             attribute vec4 a_position;
             attribute vec2 a_texcoord;
             varying vec2 v_texcoord;
@@ -42,18 +41,15 @@ class SimpleVertexShaderSample : public SampleApplication
             {
                 gl_Position = u_mvpMatrix * a_position;
                 v_texcoord = a_texcoord;
-            }
-        );
+            })";
 
-        const std::string fs = SHADER_SOURCE
-        (
-            precision mediump float;
+        const std::string fs =
+            R"(precision mediump float;
             varying vec2 v_texcoord;
             void main()
             {
                 gl_FragColor = vec4(v_texcoord.x, v_texcoord.y, 1.0, 1.0);
-            }
-        );
+            })";
 
         mProgram = CompileProgram(vs, fs);
         if (!mProgram)
@@ -93,8 +89,8 @@ class SimpleVertexShaderSample : public SampleApplication
         Matrix4 perspectiveMatrix = Matrix4::perspective(60.0f, float(getWindow()->getWidth()) / getWindow()->getHeight(),
                                                          1.0f, 20.0f);
 
-        Matrix4 modelMatrix = Matrix4::translate(Vector3(0.0f, 0.0f, -2.0f)) *
-                              Matrix4::rotate(mRotation, Vector3(1.0f, 0.0f, 1.0f));
+        Matrix4 modelMatrix = Matrix4::translate(angle::Vector3(0.0f, 0.0f, -2.0f)) *
+                              Matrix4::rotate(mRotation, angle::Vector3(1.0f, 0.0f, 1.0f));
 
         Matrix4 viewMatrix = Matrix4::identity();
 
@@ -148,6 +144,13 @@ class SimpleVertexShaderSample : public SampleApplication
 
 int main(int argc, char **argv)
 {
-    SimpleVertexShaderSample app;
+    EGLint displayType = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
+
+    if (argc > 1)
+    {
+        displayType = GetDisplayTypeFromArg(argv[1]);
+    }
+
+    SimpleVertexShaderSample app(displayType);
     return app.run();
 }

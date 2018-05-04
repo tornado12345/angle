@@ -7,9 +7,12 @@
 #ifndef COMPILER_TRANSLATOR_VERSIONGLSL_H_
 #define COMPILER_TRANSLATOR_VERSIONGLSL_H_
 
-#include "compiler/translator/IntermNode.h"
+#include "compiler/translator/tree_util/IntermTraverse.h"
 
 #include "compiler/translator/Pragma.h"
+
+namespace sh
+{
 
 static const int GLSL_VERSION_110 = 110;
 static const int GLSL_VERSION_120 = 120;
@@ -56,8 +59,10 @@ class TVersionGLSL : public TIntermTraverser
     //   Else 110 is returned.
     int getVersion() const { return mVersion; }
 
-    void visitSymbol(TIntermSymbol *) override;
-    bool visitAggregate(Visit, TIntermAggregate *) override;
+    void visitSymbol(TIntermSymbol *node) override;
+    bool visitAggregate(Visit, TIntermAggregate *node) override;
+    bool visitInvariantDeclaration(Visit, TIntermInvariantDeclaration *node) override;
+    void visitFunctionPrototype(TIntermFunctionPrototype *node) override;
     bool visitDeclaration(Visit, TIntermDeclaration *node) override;
 
   private:
@@ -65,5 +70,7 @@ class TVersionGLSL : public TIntermTraverser
 
     int mVersion;
 };
+
+}  // namespace sh
 
 #endif  // COMPILER_TRANSLATOR_VERSIONGLSL_H_

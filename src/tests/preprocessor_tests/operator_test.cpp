@@ -7,13 +7,16 @@
 #include "PreprocessorTest.h"
 #include "compiler/preprocessor/Token.h"
 
+namespace angle
+{
+
 struct OperatorTestParam
 {
     const char* str;
     int op;
 };
 
-class OperatorTest : public PreprocessorTest,
+class OperatorTest : public SimplePreprocessorTest,
                      public testing::WithParamInterface<OperatorTestParam>
 {
 };
@@ -22,10 +25,8 @@ TEST_P(OperatorTest, Identified)
 {
     OperatorTestParam param = GetParam();
 
-    ASSERT_TRUE(mPreprocessor.init(1, &param.str, 0));
-
     pp::Token token;
-    mPreprocessor.lex(&token);
+    lexSingleToken(param.str, &token);
     EXPECT_EQ(param.op, token.type);
     EXPECT_EQ(param.str, token.text);
 }
@@ -78,3 +79,4 @@ static const OperatorTestParam kOperators[] = {
 INSTANTIATE_TEST_CASE_P(All, OperatorTest,
                         testing::ValuesIn(kOperators));
 
+}  // namespace angle

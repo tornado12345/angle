@@ -11,6 +11,9 @@
 #include "compiler/preprocessor/Input.h"
 #include "compiler/preprocessor/Lexer.h"
 
+namespace angle
+{
+
 namespace pp
 {
 
@@ -34,9 +37,9 @@ class Tokenizer : public Lexer
     };
 
     Tokenizer(Diagnostics *diagnostics);
-    ~Tokenizer();
+    ~Tokenizer() override;
 
-    bool init(size_t count, const char * const string[], const int length[]);
+    bool init(size_t count, const char *const string[], const int length[]);
 
     void setFileNumber(int file);
     void setLineNumber(int line);
@@ -48,11 +51,13 @@ class Tokenizer : public Lexer
     bool initScanner();
     void destroyScanner();
 
-    void *mHandle;  // Scanner handle.
-    Context mContext;  // Scanner extra.
-    size_t mMaxTokenSize; // Maximum token size
+    void *mHandle;         // Scanner handle.
+    Context mContext;      // Scanner extra.
+    size_t mMaxTokenSize;  // Maximum token size
 };
 
 }  // namespace pp
+
+}  // namespace angle
 
 #endif  // COMPILER_PREPROCESSOR_TOKENIZER_H_

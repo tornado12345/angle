@@ -8,13 +8,16 @@
 #include "compiler/preprocessor/Input.h"
 #include "compiler/preprocessor/Token.h"
 
+namespace angle
+{
+
 class InitTest : public PreprocessorTest
 {
 };
 
 TEST_F(InitTest, ZeroCount)
 {
-    EXPECT_TRUE(mPreprocessor.init(0, NULL, NULL));
+    EXPECT_TRUE(mPreprocessor.init(0, nullptr, nullptr));
 
     pp::Token token;
     mPreprocessor.lex(&token);
@@ -23,7 +26,7 @@ TEST_F(InitTest, ZeroCount)
 
 TEST_F(InitTest, NullString)
 {
-    EXPECT_FALSE(mPreprocessor.init(1, NULL, NULL));
+    EXPECT_FALSE(mPreprocessor.init(1, nullptr, nullptr));
 }
 
 TEST(InputTest, DefaultConstructor)
@@ -31,13 +34,13 @@ TEST(InputTest, DefaultConstructor)
     pp::Input input;
     EXPECT_EQ(0u, input.count());
     int lineNo = 0;
-    EXPECT_EQ(0u, input.read(NULL, 1, &lineNo));
+    EXPECT_EQ(0u, input.read(nullptr, 1, &lineNo));
 }
 
 TEST(InputTest, NullLength)
 {
     const char* str[] = {"foo"};
-    pp::Input input(1, str, NULL);
+    pp::Input input(1, str, nullptr);
     EXPECT_EQ(3u, input.length(0));
 }
 
@@ -62,7 +65,7 @@ TEST(InputTest, ActualLength)
 TEST(InputTest, String)
 {
     const char* str[] = {"foo"};
-    pp::Input input(1, str, NULL);
+    pp::Input input(1, str, nullptr);
     EXPECT_STREQ(str[0], input.string(0));
 }
 
@@ -74,7 +77,7 @@ TEST(InputTest, ReadSingleString)
 
     int maxSize = 1;
     int lineNo = 0;
-    pp::Input input1(count, str, NULL);
+    pp::Input input1(count, str, nullptr);
     EXPECT_EQ(1u, input1.read(buf, maxSize, &lineNo));
     EXPECT_EQ('f', buf[0]);
     EXPECT_EQ(1u, input1.read(buf, maxSize, &lineNo));
@@ -84,7 +87,7 @@ TEST(InputTest, ReadSingleString)
     EXPECT_EQ(0u, input1.read(buf, maxSize, &lineNo));
 
     maxSize = 2;
-    pp::Input input2(count, str, NULL);
+    pp::Input input2(count, str, nullptr);
     EXPECT_EQ(2u, input2.read(buf, maxSize, &lineNo));
     EXPECT_STREQ("fo", buf);
     EXPECT_EQ(1u, input2.read(buf, maxSize, &lineNo));
@@ -92,13 +95,13 @@ TEST(InputTest, ReadSingleString)
     EXPECT_EQ(0u, input2.read(buf, maxSize, &lineNo));
 
     maxSize = 3;
-    pp::Input input3(count, str, NULL);
+    pp::Input input3(count, str, nullptr);
     EXPECT_EQ(3u, input3.read(buf, maxSize, &lineNo));
     EXPECT_STREQ("foo", buf);
     EXPECT_EQ(0u, input3.read(buf, maxSize, &lineNo));
 
     maxSize = 4;
-    pp::Input input4(count, str, NULL);
+    pp::Input input4(count, str, nullptr);
     EXPECT_EQ(3u, input4.read(buf, maxSize, &lineNo));
     EXPECT_STREQ("foo", buf);
     EXPECT_EQ(0u, input4.read(buf, maxSize, &lineNo));
@@ -112,7 +115,7 @@ TEST(InputTest, ReadMultipleStrings)
 
     int maxSize = 1;
     int lineNo = 0;
-    pp::Input input1(count, str, NULL);
+    pp::Input input1(count, str, nullptr);
     EXPECT_EQ(1u, input1.read(buf, maxSize, &lineNo));
     EXPECT_EQ('f', buf[0]);
     EXPECT_EQ(1u, input1.read(buf, maxSize, &lineNo));
@@ -122,7 +125,7 @@ TEST(InputTest, ReadMultipleStrings)
     EXPECT_EQ(0u, input1.read(buf, maxSize, &lineNo));
 
     maxSize = 2;
-    pp::Input input2(count, str, NULL);
+    pp::Input input2(count, str, nullptr);
     EXPECT_EQ(2u, input2.read(buf, maxSize, &lineNo));
     EXPECT_STREQ("fo", buf);
     EXPECT_EQ(1u, input2.read(buf, maxSize, &lineNo));
@@ -130,13 +133,13 @@ TEST(InputTest, ReadMultipleStrings)
     EXPECT_EQ(0u, input2.read(buf, maxSize, &lineNo));
 
     maxSize = 3;
-    pp::Input input3(count, str, NULL);
+    pp::Input input3(count, str, nullptr);
     EXPECT_EQ(3u, input3.read(buf, maxSize, &lineNo));
     EXPECT_STREQ("foo", buf);
     EXPECT_EQ(0u, input3.read(buf, maxSize, &lineNo));
 
     maxSize = 4;
-    pp::Input input4(count, str, NULL);
+    pp::Input input4(count, str, nullptr);
     EXPECT_EQ(3u, input4.read(buf, maxSize, &lineNo));
     EXPECT_STREQ("foo", buf);
     EXPECT_EQ(0u, input4.read(buf, maxSize, &lineNo));
@@ -176,3 +179,5 @@ TEST(InputTest, ReadStringsWithLineContinuation)
     EXPECT_EQ(2, lineNo);
     EXPECT_STREQ("foobar", buf);
 }
+
+}  // namespace angle

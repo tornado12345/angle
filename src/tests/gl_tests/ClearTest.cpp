@@ -7,7 +7,7 @@
 #include "test_utils/ANGLETest.h"
 
 #include "random_utils.h"
-#include "Vector.h"
+#include "test_utils/gl_raii.h"
 
 using namespace angle;
 
@@ -26,17 +26,17 @@ Vector4 RandomVec4(int seed, float minValue, float maxValue)
 GLColor Vec4ToColor(const Vector4 &vec)
 {
     GLColor color;
-    color.R = static_cast<uint8_t>(vec.x * 255.0f);
-    color.G = static_cast<uint8_t>(vec.y * 255.0f);
-    color.B = static_cast<uint8_t>(vec.z * 255.0f);
-    color.A = static_cast<uint8_t>(vec.w * 255.0f);
+    color.R = static_cast<uint8_t>(vec.x() * 255.0f);
+    color.G = static_cast<uint8_t>(vec.y() * 255.0f);
+    color.B = static_cast<uint8_t>(vec.z() * 255.0f);
+    color.A = static_cast<uint8_t>(vec.w() * 255.0f);
     return color;
 };
 
 class ClearTestBase : public ANGLETest
 {
   protected:
-    ClearTestBase() : mProgram(0)
+    ClearTestBase()
     {
         setWindowWidth(128);
         setWindowHeight(128);
@@ -59,8 +59,6 @@ class ClearTestBase : public ANGLETest
 
     void TearDown() override
     {
-        glDeleteProgram(mProgram);
-
         if (!mFBOs.empty())
         {
             glDeleteFramebuffers(static_cast<GLsizei>(mFBOs.size()), mFBOs.data());
@@ -74,34 +72,6 @@ class ClearTestBase : public ANGLETest
         ANGLETest::TearDown();
     }
 
-    void setupDefaultProgram()
-    {
-        const std::string vertexShaderSource = SHADER_SOURCE
-        (
-            precision highp float;
-            attribute vec4 position;
-
-            void main()
-            {
-                gl_Position = position;
-            }
-        );
-
-        const std::string fragmentShaderSource = SHADER_SOURCE
-        (
-            precision highp float;
-
-            void main()
-            {
-                gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-            }
-        );
-
-        mProgram = CompileProgram(vertexShaderSource, fragmentShaderSource);
-        ASSERT_NE(0u, mProgram);
-    }
-
-    GLuint mProgram;
     std::vector<GLuint> mFBOs;
     std::vector<GLuint> mTextures;
 };
@@ -122,8 +92,7 @@ TEST_P(ClearTest, RGBA8Framebuffer)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[0]);
 
-    GLuint texture;
-    glGenTextures(1, &texture);
+    GLTexture texture;
 
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, getWindowWidth(), getWindowHeight(), 0, GL_RGBA,
@@ -138,13 +107,6 @@ TEST_P(ClearTest, RGBA8Framebuffer)
 
 TEST_P(ClearTest, ClearIssue)
 {
-    // TODO(geofflang): Figure out why this is broken on Intel OpenGL
-    if (IsIntel() && getPlatformRenderer() == EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE)
-    {
-        std::cout << "Test skipped on Intel OpenGL." << std::endl;
-        return;
-    }
-
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
 
@@ -156,8 +118,7 @@ TEST_P(ClearTest, ClearIssue)
 
     glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[0]);
 
-    GLuint rbo;
-    glGenRenderbuffers(1, &rbo);
+    GLRenderbuffer rbo;
     glBindRenderbuffer(GL_RENDERBUFFER, rbo);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB565, 16, 16);
 
@@ -176,10 +137,10 @@ TEST_P(ClearTest, ClearIssue)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    setupDefaultProgram();
-    drawQuad(mProgram, "position", 0.5f);
+    ANGLE_GL_PROGRAM(blueProgram, essl1_shaders::vs::Simple(), essl1_shaders::fs::Red());
+    drawQuad(blueProgram, essl1_shaders::PositionAttrib(), 0.5f);
 
-    EXPECT_PIXEL_EQ(0, 0, 0, 255, 0, 255);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
 }
 
 // Requires ES3
@@ -191,8 +152,7 @@ TEST_P(ClearTestES3, MaskedClearBufferBug)
 
     glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[0]);
 
-    GLuint textures[2];
-    glGenTextures(2, &textures[0]);
+    GLTexture textures[2];
 
     glBindTexture(GL_TEXTURE_2D, textures[0]);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
@@ -218,8 +178,6 @@ TEST_P(ClearTestES3, MaskedClearBufferBug)
     ASSERT_GL_NO_ERROR();
 
     EXPECT_PIXEL_NEAR(0, 0, 0, 127, 255, 255, 1);
-
-    glDeleteTextures(2, textures);
 }
 
 TEST_P(ClearTestES3, BadFBOSerialBug)
@@ -227,8 +185,7 @@ TEST_P(ClearTestES3, BadFBOSerialBug)
     // First make a simple framebuffer, and clear it to green
     glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[0]);
 
-    GLuint textures[2];
-    glGenTextures(2, &textures[0]);
+    GLTexture textures[2];
 
     glBindTexture(GL_TEXTURE_2D, textures[0]);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, getWindowWidth(), getWindowHeight());
@@ -241,15 +198,13 @@ TEST_P(ClearTestES3, BadFBOSerialBug)
     glClearBufferfv(GL_COLOR, 0, clearValues1);
 
     ASSERT_GL_NO_ERROR();
-    EXPECT_PIXEL_EQ(0, 0, 0, 255, 0, 255);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
 
     // Next make a second framebuffer, and draw it to red
     // (Triggers bad applied render target serial)
-    GLuint fbo2;
-    glGenFramebuffers(1, &fbo2);
-    ASSERT_GL_NO_ERROR();
-
+    GLFramebuffer fbo2;
     glBindFramebuffer(GL_FRAMEBUFFER, fbo2);
+    ASSERT_GL_NO_ERROR();
 
     glBindTexture(GL_TEXTURE_2D, textures[1]);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, getWindowWidth(), getWindowHeight());
@@ -257,35 +212,24 @@ TEST_P(ClearTestES3, BadFBOSerialBug)
 
     glDrawBuffers(1, drawBuffers);
 
-    setupDefaultProgram();
-    drawQuad(mProgram, "position", 0.5f);
+    ANGLE_GL_PROGRAM(blueProgram, essl1_shaders::vs::Simple(), essl1_shaders::fs::Red());
+    drawQuad(blueProgram, essl1_shaders::PositionAttrib(), 0.5f);
 
     ASSERT_GL_NO_ERROR();
-    EXPECT_PIXEL_EQ(0, 0, 255, 0, 0, 255);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
 
     // Check that the first framebuffer is still green.
     glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[0]);
-    EXPECT_PIXEL_EQ(0, 0, 0, 255, 0, 255);
-
-    glDeleteTextures(2, textures);
-    glDeleteFramebuffers(1, &fbo2);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
 }
 
 // Test that SRGB framebuffers clear to the linearized clear color
 TEST_P(ClearTestES3, SRGBClear)
 {
-    // TODO(jmadill): figure out why this fails
-    if (IsIntel() && GetParam() == ES3_OPENGL())
-    {
-        std::cout << "Test skipped on Intel due to failures." << std::endl;
-        return;
-    }
-
     // First make a simple framebuffer, and clear it
     glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[0]);
 
-    GLuint texture;
-    glGenTextures(1, &texture);
+    GLTexture texture;
 
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_SRGB8_ALPHA8, getWindowWidth(), getWindowHeight());
@@ -301,26 +245,9 @@ TEST_P(ClearTestES3, SRGBClear)
 // attachment
 TEST_P(ClearTestES3, MixedSRGBClear)
 {
-    // TODO(cwallez) figure out why it is broken on Intel on Mac
-#if defined(ANGLE_PLATFORM_APPLE)
-    if (IsIntel() && getPlatformRenderer() == EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE)
-    {
-        std::cout << "Test skipped on Intel on Mac." << std::endl;
-        return;
-    }
-#endif
-
-    // TODO(jmadill): figure out why this fails
-    if (IsIntel() && GetParam() == ES3_OPENGL())
-    {
-        std::cout << "Test skipped on Intel due to failures." << std::endl;
-        return;
-    }
-
     glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[0]);
 
-    GLuint textures[2];
-    glGenTextures(2, &textures[0]);
+    GLTexture textures[2];
 
     glBindTexture(GL_TEXTURE_2D, textures[0]);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_SRGB8_ALPHA8, getWindowWidth(), getWindowHeight());
@@ -356,12 +283,6 @@ TEST_P(ClearTestES3, MixedSRGBClear)
 // flush or finish after ClearBufferfv or each draw.
 TEST_P(ClearTestES3, RepeatedClear)
 {
-    if (IsD3D11() && (IsNVIDIA() || IsIntel()))
-    {
-        std::cout << "Test skipped on Nvidia and Intel D3D11." << std::endl;
-        return;
-    }
-
     const std::string &vertexSource =
         "#version 300 es\n"
         "in highp vec2 position;\n"
@@ -383,8 +304,7 @@ TEST_P(ClearTestES3, RepeatedClear)
         "    color = texture(tex, v_coord);\n"
         "}\n";
 
-    mProgram = CompileProgram(vertexSource, fragmentSource);
-    ASSERT_NE(0u, mProgram);
+    ANGLE_GL_PROGRAM(program, vertexSource, fragmentSource);
 
     mTextures.resize(1, 0);
     glGenTextures(1, mTextures.data());
@@ -412,16 +332,16 @@ TEST_P(ClearTestES3, RepeatedClear)
     ASSERT_GLENUM_EQ(GL_FRAMEBUFFER_COMPLETE, glCheckFramebufferStatus(GL_FRAMEBUFFER));
 
     // larger fbo bound -- clear to transparent black
-    glUseProgram(mProgram);
-    GLint uniLoc = glGetUniformLocation(mProgram, "tex");
+    glUseProgram(program);
+    GLint uniLoc = glGetUniformLocation(program, "tex");
     ASSERT_NE(-1, uniLoc);
     glUniform1i(uniLoc, 0);
     glBindTexture(GL_TEXTURE_2D, mTextures[0]);
 
-    GLint positionLocation = glGetAttribLocation(mProgram, "position");
+    GLint positionLocation = glGetAttribLocation(program, "position");
     ASSERT_NE(-1, positionLocation);
 
-    glUseProgram(mProgram);
+    glUseProgram(program);
 
     for (int cellY = 0; cellY < numRowsCols; cellY++)
     {
@@ -437,7 +357,7 @@ TEST_P(ClearTestES3, RepeatedClear)
 
             // Method 1: Set viewport and draw full-viewport quad
             glViewport(cellX * cellSize, cellY * cellSize, cellSize, cellSize);
-            drawQuad(mProgram, "position", 0.5f);
+            drawQuad(program, "position", 0.5f);
 
             // Uncommenting the glFinish call seems to make the test pass.
             // glFinish();
@@ -467,7 +387,50 @@ TEST_P(ClearTestES3, RepeatedClear)
     ASSERT_GL_NO_ERROR();
 }
 
+class ScissoredClearTest : public ANGLETest
+{
+  public:
+    ScissoredClearTest()
+    {
+        setWindowWidth(64);
+        setWindowHeight(64);
+        setConfigRedBits(8);
+        setConfigGreenBits(8);
+        setConfigBlueBits(8);
+        setConfigAlphaBits(8);
+    }
+};
+
+// Simple scissored clear.
+TEST_P(ScissoredClearTest, BasicScissoredColorClear)
+{
+    const int w     = getWindowWidth();
+    const int h     = getWindowHeight();
+    const int whalf = w >> 1;
+    const int hhalf = h >> 1;
+
+    // Clear whole region to red.
+    glClearColor(1.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Enable scissor and clear to green.
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(whalf / 2, hhalf / 2, whalf, whalf);
+    glClearColor(0.0, 1.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+
+    // Check the four corners for the original clear color, and the middle for the scissored clear
+    // color.
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red) << "out-of-scissor area should be red";
+    EXPECT_PIXEL_COLOR_EQ(w - 1, 0, GLColor::red) << "out-of-scissor area should be red";
+    EXPECT_PIXEL_COLOR_EQ(0, h - 1, GLColor::red) << "out-of-scissor area should be red";
+    EXPECT_PIXEL_COLOR_EQ(w - 1, h - 1, GLColor::red) << "out-of-scissor area should be red";
+    EXPECT_PIXEL_COLOR_EQ(whalf, hhalf, GLColor::green) << "in-scissor area should be green";
+}
+
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these tests should be run against.
+// Vulkan support disabled because of incomplete implementation.
 ANGLE_INSTANTIATE_TEST(ClearTest,
                        ES2_D3D9(),
                        ES2_D3D11(),
@@ -475,7 +438,9 @@ ANGLE_INSTANTIATE_TEST(ClearTest,
                        ES2_OPENGL(),
                        ES3_OPENGL(),
                        ES2_OPENGLES(),
-                       ES3_OPENGLES());
+                       ES3_OPENGLES(),
+                       ES2_VULKAN());
 ANGLE_INSTANTIATE_TEST(ClearTestES3, ES3_D3D11(), ES3_OPENGL(), ES3_OPENGLES());
+ANGLE_INSTANTIATE_TEST(ScissoredClearTest, ES2_D3D11(), ES2_OPENGL(), ES2_VULKAN());
 
 }  // anonymous namespace

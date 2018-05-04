@@ -7,65 +7,44 @@
 //   Performance tests for ANGLE draw call overhead.
 //
 
-#include <sstream>
-
 #include "ANGLEPerfTest.h"
-#include "shader_utils.h"
-
-using namespace angle;
+#include "DrawCallPerfParams.h"
+#include "test_utils/draw_call_perf_utils.h"
 
 namespace
 {
 
-struct DrawCallPerfParams final : public RenderTestParams
+struct DrawArraysPerfParams : public DrawCallPerfParams
 {
-    // Common default options
-    DrawCallPerfParams()
-    {
-        majorVersion = 2;
-        minorVersion = 0;
-        windowWidth = 256;
-        windowHeight = 256;
-    }
+    DrawArraysPerfParams(const DrawCallPerfParams &base) : DrawCallPerfParams(base) {}
 
-    std::string suffix() const override
-    {
-        std::stringstream strstr;
+    std::string suffix() const override;
 
-        strstr << RenderTestParams::suffix();
-
-        if (numTris == 0)
-        {
-            strstr << "_validation_only";
-        }
-
-        if (useFBO)
-        {
-            strstr << "_render_to_texture";
-        }
-
-        if (eglParameters.deviceType == EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE)
-        {
-            strstr << "_null";
-        }
-
-        return strstr.str();
-    }
-
-    unsigned int iterations = 50;
-    double runTimeSeconds   = 10.0;
-    int numTris             = 1;
-    bool useFBO             = false;
+    bool changeVertexBuffer = false;
 };
 
-std::ostream &operator<<(std::ostream &os, const DrawCallPerfParams &params)
+std::string DrawArraysPerfParams::suffix() const
+{
+    std::stringstream strstr;
+
+    strstr << DrawCallPerfParams::suffix();
+
+    if (changeVertexBuffer)
+    {
+        strstr << "_vbo_change";
+    }
+
+    return strstr.str();
+}
+
+std::ostream &operator<<(std::ostream &os, const DrawArraysPerfParams &params)
 {
     os << params.suffix().substr(1);
     return os;
 }
 
 class DrawCallPerfBenchmark : public ANGLERenderTest,
-                              public ::testing::WithParamInterface<DrawCallPerfParams>
+                              public ::testing::WithParamInterface<DrawArraysPerfParams>
 {
   public:
     DrawCallPerfBenchmark();
@@ -76,7 +55,8 @@ class DrawCallPerfBenchmark : public ANGLERenderTest,
 
   private:
     GLuint mProgram = 0;
-    GLuint mBuffer  = 0;
+    GLuint mBuffer1 = 0;
+    GLuint mBuffer2 = 0;
     GLuint mFBO     = 0;
     GLuint mTexture = 0;
     int mNumTris    = GetParam().numTris;
@@ -93,56 +73,13 @@ void DrawCallPerfBenchmark::initializeBenchmark()
 
     ASSERT_LT(0u, params.iterations);
 
-    const std::string vs = SHADER_SOURCE
-    (
-        attribute vec2 vPosition;
-        uniform float uScale;
-        uniform float uOffset;
-        void main()
-        {
-            gl_Position = vec4(vPosition * vec2(uScale) - vec2(uOffset), 0, 1);
-        }
-    );
-
-    const std::string fs = SHADER_SOURCE
-    (
-        precision mediump float;
-        void main()
-        {
-            gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-        }
-    );
-
-    mProgram = CompileProgram(vs, fs);
+    mProgram = SetupSimpleDrawProgram();
     ASSERT_NE(0u, mProgram);
-
-    // Use the program object
-    glUseProgram(mProgram);
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
-    std::vector<GLfloat> floatData;
-
-    for (int quadIndex = 0; quadIndex < mNumTris; ++quadIndex)
-    {
-        floatData.push_back(1);
-        floatData.push_back(2);
-        floatData.push_back(0);
-        floatData.push_back(0);
-        floatData.push_back(2);
-        floatData.push_back(0);
-    }
-
-    glGenBuffers(1, &mBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, mBuffer);
-
-    // To avoid generating GL errors when testing validation-only
-    if (floatData.empty())
-    {
-        floatData.push_back(0.0f);
-    }
-
-    glBufferData(GL_ARRAY_BUFFER, floatData.size() * sizeof(GLfloat), &floatData[0], GL_STATIC_DRAW);
+    mBuffer1 = Create2DTriangleBuffer(mNumTris, GL_STATIC_DRAW);
+    mBuffer2 = Create2DTriangleBuffer(mNumTris, GL_STATIC_DRAW);
 
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(0);
@@ -150,21 +87,9 @@ void DrawCallPerfBenchmark::initializeBenchmark()
     // Set the viewport
     glViewport(0, 0, getWindow()->getWidth(), getWindow()->getHeight());
 
-    GLfloat scale = 0.5f;
-    GLfloat offset = 0.5f;
-
-    glUniform1f(glGetUniformLocation(mProgram, "uScale"), scale);
-    glUniform1f(glGetUniformLocation(mProgram, "uOffset"), offset);
-
     if (params.useFBO)
     {
-        glGenFramebuffers(1, &mFBO);
-        glBindFramebuffer(GL_FRAMEBUFFER, mFBO);
-        glGenTextures(1, &mTexture);
-        glBindTexture(GL_TEXTURE_2D, mTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, getWindow()->getWidth(), getWindow()->getHeight(),
-                     0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mTexture, 0);
+        CreateColorFBO(getWindow()->getWidth(), getWindow()->getHeight(), &mTexture, &mFBO);
     }
 
     ASSERT_GL_NO_ERROR();
@@ -173,9 +98,45 @@ void DrawCallPerfBenchmark::initializeBenchmark()
 void DrawCallPerfBenchmark::destroyBenchmark()
 {
     glDeleteProgram(mProgram);
-    glDeleteBuffers(1, &mBuffer);
+    glDeleteBuffers(1, &mBuffer1);
+    glDeleteBuffers(1, &mBuffer2);
     glDeleteTextures(1, &mTexture);
     glDeleteFramebuffers(1, &mFBO);
+}
+
+void ClearThenDraw(unsigned int iterations, GLsizei numElements)
+{
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    for (unsigned int it = 0; it < iterations; it++)
+    {
+        glDrawArrays(GL_TRIANGLES, 0, numElements);
+    }
+}
+
+void JustDraw(unsigned int iterations, GLsizei numElements)
+{
+    for (unsigned int it = 0; it < iterations; it++)
+    {
+        glDrawArrays(GL_TRIANGLES, 0, numElements);
+    }
+}
+
+void ChangeVerticesThenDraw(unsigned int iterations,
+                            GLsizei numElements,
+                            GLuint buffer1,
+                            GLuint buffer2)
+{
+    for (unsigned int it = 0; it < iterations; it++)
+    {
+        glBindBuffer(GL_ARRAY_BUFFER, buffer1);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+        glDrawArrays(GL_TRIANGLES, 0, numElements);
+
+        glBindBuffer(GL_ARRAY_BUFFER, buffer2);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+        glDrawArrays(GL_TRIANGLES, 0, numElements);
+    }
 }
 
 void DrawCallPerfBenchmark::drawBenchmark()
@@ -184,57 +145,25 @@ void DrawCallPerfBenchmark::drawBenchmark()
     // back-end. The GL back-end doesn't have a proper NULL device at the moment.
     // TODO(jmadill): Remove this when/if we ever get a proper OpenGL NULL device.
     const auto &eglParams = GetParam().eglParameters;
-    if (eglParams.deviceType != EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE ||
-        (eglParams.renderer != EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE &&
-         eglParams.renderer != EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE))
+    const auto &params    = GetParam();
+    GLsizei numElements   = static_cast<GLsizei>(3 * mNumTris);
+
+    if (params.changeVertexBuffer)
     {
-        glClear(GL_COLOR_BUFFER_BIT);
+        ChangeVerticesThenDraw(params.iterations, numElements, mBuffer1, mBuffer2);
     }
-
-    const auto &params = GetParam();
-
-    for (unsigned int it = 0; it < params.iterations; it++)
+    else if (eglParams.deviceType != EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE ||
+             (eglParams.renderer != EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE &&
+              eglParams.renderer != EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE))
     {
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(3 * mNumTris));
+        ClearThenDraw(params.iterations, numElements);
+    }
+    else
+    {
+        JustDraw(params.iterations, numElements);
     }
 
     ASSERT_GL_NO_ERROR();
-}
-
-using namespace egl_platform;
-
-DrawCallPerfParams DrawCallPerfD3D11Params(bool useNullDevice, bool renderToTexture)
-{
-    DrawCallPerfParams params;
-    params.eglParameters = useNullDevice ? D3D11_NULL() : D3D11();
-    params.useFBO        = renderToTexture;
-    return params;
-}
-
-DrawCallPerfParams DrawCallPerfD3D9Params(bool useNullDevice, bool renderToTexture)
-{
-    DrawCallPerfParams params;
-    params.eglParameters = useNullDevice ? D3D9_NULL() : D3D9();
-    params.useFBO        = renderToTexture;
-    return params;
-}
-
-DrawCallPerfParams DrawCallPerfOpenGLParams(bool useNullDevice, bool renderToTexture)
-{
-    DrawCallPerfParams params;
-    params.eglParameters = useNullDevice ? OPENGL_NULL() : OPENGL();
-    params.useFBO        = renderToTexture;
-    return params;
-}
-
-DrawCallPerfParams DrawCallPerfValidationOnly()
-{
-    DrawCallPerfParams params;
-    params.eglParameters = DEFAULT();
-    params.iterations     = 10000;
-    params.numTris = 0;
-    params.runTimeSeconds = 5.0;
-    return params;
 }
 
 TEST_P(DrawCallPerfBenchmark, Run)
@@ -242,15 +171,28 @@ TEST_P(DrawCallPerfBenchmark, Run)
     run();
 }
 
+DrawArraysPerfParams DrawArrays(const DrawCallPerfParams &base, bool withBufferChange)
+{
+    DrawArraysPerfParams params(base);
+    params.changeVertexBuffer = withBufferChange;
+    return params;
+}
+
 ANGLE_INSTANTIATE_TEST(DrawCallPerfBenchmark,
-                       DrawCallPerfD3D9Params(false, false),
-                       DrawCallPerfD3D9Params(true, false),
-                       DrawCallPerfD3D11Params(false, false),
-                       DrawCallPerfD3D11Params(true, false),
-                       DrawCallPerfD3D11Params(true, true),
-                       DrawCallPerfOpenGLParams(false, false),
-                       DrawCallPerfOpenGLParams(true, false),
-                       DrawCallPerfOpenGLParams(true, true),
-                       DrawCallPerfValidationOnly());
+                       DrawArrays(DrawCallPerfD3D9Params(false, false), false),
+                       DrawArrays(DrawCallPerfD3D9Params(true, false), false),
+                       DrawArrays(DrawCallPerfD3D11Params(false, false), false),
+                       DrawArrays(DrawCallPerfD3D11Params(true, false), false),
+                       DrawArrays(DrawCallPerfD3D11Params(true, true), false),
+                       DrawArrays(DrawCallPerfD3D11Params(true, false), true),
+                       DrawArrays(DrawCallPerfOpenGLOrGLESParams(false, false), false),
+                       DrawArrays(DrawCallPerfOpenGLOrGLESParams(true, false), false),
+                       DrawArrays(DrawCallPerfOpenGLOrGLESParams(true, true), false),
+                       DrawArrays(DrawCallPerfOpenGLOrGLESParams(true, false), true),
+                       DrawArrays(DrawCallPerfValidationOnly(), false),
+                       DrawArrays(DrawCallPerfVulkanParams(true, false), true),
+                       DrawArrays(DrawCallPerfVulkanParams(true, false), false),
+                       DrawArrays(DrawCallPerfVulkanParams(false, false), false),
+                       DrawArrays(DrawCallPerfVulkanParams(false, false), true));
 
 } // namespace

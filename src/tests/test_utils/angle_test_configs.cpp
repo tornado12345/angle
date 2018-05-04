@@ -9,6 +9,37 @@
 namespace angle
 {
 
+CompilerParameters::CompilerParameters()
+{
+    output = SH_HLSL_4_1_OUTPUT;
+}
+
+CompilerParameters::CompilerParameters(ShShaderOutput output) : output(output)
+{
+}
+
+const char *CompilerParameters::str() const
+{
+    switch (output)
+    {
+        case SH_HLSL_4_1_OUTPUT:
+            return "HLSL_4_1";
+        case SH_GLSL_450_CORE_OUTPUT:
+            return "GLSL_4_50";
+        case SH_ESSL_OUTPUT:
+            return "ESSL";
+        default:
+            UNREACHABLE();
+            return "unk";
+    }
+}
+
+std::ostream &operator<<(std::ostream &stream, const CompilerParameters &p)
+{
+    stream << p.str();
+    return stream;
+}
+
 PlatformParameters::PlatformParameters()
     : PlatformParameters(2, 0, EGLPlatformParameters())
 {
@@ -59,24 +90,30 @@ std::ostream &operator<<(std::ostream& stream, const PlatformParameters &pp)
 
     switch (pp.eglParameters.renderer)
     {
-      case EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE:
-        stream << "D3D9";
-        break;
-      case EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE:
-        stream << "D3D11";
-        break;
-      case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
-        stream << "OPENGL";
-        break;
-      case EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE:
-          stream << "OPENGLES";
-        break;
-      case EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE:
-        stream << "DEFAULT";
-        break;
-      default:
-        UNREACHABLE();
-        break;
+        case EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE:
+            stream << "DEFAULT";
+            break;
+        case EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE:
+            stream << "D3D9";
+            break;
+        case EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE:
+            stream << "D3D11";
+            break;
+        case EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE:
+            stream << "NULL";
+            break;
+        case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
+            stream << "OPENGL";
+            break;
+        case EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE:
+            stream << "OPENGLES";
+            break;
+        case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
+            stream << "VULKAN";
+            break;
+        default:
+            stream << "UNDEFINED";
+            break;
     }
 
     if (pp.eglParameters.majorVersion != EGL_DONT_CARE)
@@ -100,13 +137,13 @@ std::ostream &operator<<(std::ostream& stream, const PlatformParameters &pp)
           stream << "_NULL";
           break;
 
-      case EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE:
-        stream << "_REFERENCE";
-        break;
+      case EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE:
+          stream << "_REFERENCE";
+          break;
 
-      case EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE:
-        stream << "_WARP";
-        break;
+      case EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE:
+          stream << "_WARP";
+          break;
 
       default:
         UNREACHABLE();
@@ -170,10 +207,8 @@ EGLPlatformParameters D3D9_NULL()
 
 EGLPlatformParameters D3D9_REFERENCE()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE,
-        EGL_DONT_CARE, EGL_DONT_CARE,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE, EGL_DONT_CARE, EGL_DONT_CARE,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE);
 }
 
 EGLPlatformParameters D3D11()
@@ -240,98 +275,74 @@ EGLPlatformParameters D3D11_NULL()
 
 EGLPlatformParameters D3D11_WARP()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        EGL_DONT_CARE, EGL_DONT_CARE,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, EGL_DONT_CARE, EGL_DONT_CARE,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL11_1_WARP()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        11, 1,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 11, 1,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL11_0_WARP()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        11, 0,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 11, 0,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL10_1_WARP()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        10, 1,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 10, 1,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL10_0_WARP()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        10, 0,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 10, 0,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL9_3_WARP()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        9, 3,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 9, 3,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE);
 }
 
 EGLPlatformParameters D3D11_REFERENCE()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        EGL_DONT_CARE, EGL_DONT_CARE,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, EGL_DONT_CARE, EGL_DONT_CARE,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL11_1_REFERENCE()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        11, 1,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 11, 1,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL11_0_REFERENCE()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        11, 0,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 11, 0,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL10_1_REFERENCE()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        10, 1,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 10, 1,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL10_0_REFERENCE()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        10, 0,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 10, 0,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE);
 }
 
 EGLPlatformParameters D3D11_FL9_3_REFERENCE()
 {
-    return EGLPlatformParameters(
-        EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
-        9, 3,
-        EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE);
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, 9, 3,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE);
 }
 
 EGLPlatformParameters OPENGL()
@@ -367,9 +378,40 @@ EGLPlatformParameters OPENGLES(EGLint major, EGLint minor)
                                  EGL_DONT_CARE);
 }
 
-} // namespace egl_platform
+EGLPlatformParameters OPENGLES_NULL()
+{
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE, EGL_DONT_CARE,
+                                 EGL_DONT_CARE, EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE);
+}
+
+EGLPlatformParameters OPENGL_OR_GLES(bool useNullDevice)
+{
+#if defined(ANGLE_PLATFORM_ANDROID)
+    return useNullDevice ? OPENGLES_NULL() : OPENGLES();
+#else
+    return useNullDevice ? OPENGL_NULL() : OPENGL();
+#endif
+}
+
+EGLPlatformParameters VULKAN()
+{
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE);
+}
+
+EGLPlatformParameters VULKAN_NULL()
+{
+    return EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE, EGL_DONT_CARE, EGL_DONT_CARE,
+                                 EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE);
+}
+
+}  // namespace egl_platform
 
 // ANGLE tests platforms
+PlatformParameters ES1_D3D9()
+{
+    return PlatformParameters(1, 0, egl_platform::D3D9());
+}
+
 PlatformParameters ES2_D3D9()
 {
     return PlatformParameters(2, 0, egl_platform::D3D9());
@@ -378,6 +420,11 @@ PlatformParameters ES2_D3D9()
 PlatformParameters ES2_D3D9_REFERENCE()
 {
     return PlatformParameters(2, 0, egl_platform::D3D9_REFERENCE());
+}
+
+PlatformParameters ES1_D3D11()
+{
+    return PlatformParameters(1, 0, egl_platform::D3D11());
 }
 
 PlatformParameters ES2_D3D11()
@@ -480,9 +527,19 @@ PlatformParameters ES3_D3D11_FL10_1()
     return PlatformParameters(3, 0, egl_platform::D3D11_FL10_1());
 }
 
-PlatformParameters ES3_D3D11_FL10_0()
+PlatformParameters ES31_D3D11()
 {
-    return PlatformParameters(3, 0, egl_platform::D3D11_FL10_0());
+    return PlatformParameters(3, 1, egl_platform::D3D11());
+}
+
+PlatformParameters ES31_D3D11_FL11_1()
+{
+    return PlatformParameters(3, 1, egl_platform::D3D11_FL11_1());
+}
+
+PlatformParameters ES31_D3D11_FL11_0()
+{
+    return PlatformParameters(3, 1, egl_platform::D3D11_FL11_0());
 }
 
 PlatformParameters ES3_D3D11_WARP()
@@ -505,11 +562,6 @@ PlatformParameters ES3_D3D11_FL10_1_WARP()
     return PlatformParameters(3, 0, egl_platform::D3D11_FL10_1_WARP());
 }
 
-PlatformParameters ES3_D3D11_FL10_0_WARP()
-{
-    return PlatformParameters(3, 0, egl_platform::D3D11_FL10_0_WARP());
-}
-
 PlatformParameters ES3_D3D11_REFERENCE()
 {
     return PlatformParameters(3, 0, egl_platform::D3D11_REFERENCE());
@@ -530,9 +582,9 @@ PlatformParameters ES3_D3D11_FL10_1_REFERENCE()
     return PlatformParameters(3, 0, egl_platform::D3D11_FL10_1_REFERENCE());
 }
 
-PlatformParameters ES3_D3D11_FL10_0_REFERENCE()
+PlatformParameters ES1_OPENGLES()
 {
-    return PlatformParameters(3, 0, egl_platform::D3D11_FL10_0_REFERENCE());
+    return PlatformParameters(1, 0, egl_platform::OPENGLES());
 }
 
 PlatformParameters ES2_OPENGLES()
@@ -565,6 +617,11 @@ PlatformParameters ES31_OPENGLES(EGLint major, EGLint minor)
     return PlatformParameters(3, 1, egl_platform::OPENGLES(major, minor));
 }
 
+PlatformParameters ES1_OPENGL()
+{
+    return PlatformParameters(1, 0, egl_platform::OPENGL());
+}
+
 PlatformParameters ES2_OPENGL()
 {
     return PlatformParameters(2, 0, egl_platform::OPENGL());
@@ -595,4 +652,44 @@ PlatformParameters ES31_OPENGL(EGLint major, EGLint minor)
     return PlatformParameters(3, 1, egl_platform::OPENGL(major, minor));
 }
 
-} // namespace angle
+PlatformParameters ES1_NULL()
+{
+    return PlatformParameters(1, 0, EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE));
+}
+
+PlatformParameters ES2_NULL()
+{
+    return PlatformParameters(2, 0, EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE));
+}
+
+PlatformParameters ES3_NULL()
+{
+    return PlatformParameters(3, 0, EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE));
+}
+
+PlatformParameters ES31_NULL()
+{
+    return PlatformParameters(3, 1, EGLPlatformParameters(EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE));
+}
+
+PlatformParameters ES1_VULKAN()
+{
+    return PlatformParameters(1, 0, egl_platform::VULKAN());
+}
+
+PlatformParameters ES1_VULKAN_NULL()
+{
+    return PlatformParameters(1, 0, egl_platform::VULKAN_NULL());
+}
+
+PlatformParameters ES2_VULKAN()
+{
+    return PlatformParameters(2, 0, egl_platform::VULKAN());
+}
+
+PlatformParameters ES2_VULKAN_NULL()
+{
+    return PlatformParameters(2, 0, egl_platform::VULKAN_NULL());
+}
+
+}  // namespace angle

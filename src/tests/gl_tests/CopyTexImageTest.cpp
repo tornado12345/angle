@@ -5,6 +5,7 @@
 //
 
 #include "test_utils/ANGLETest.h"
+#include "test_utils/gl_raii.h"
 
 namespace angle
 {
@@ -164,14 +165,6 @@ TEST_P(CopyTexImageTest, RGBAToL)
 
 TEST_P(CopyTexImageTest, RGBToL)
 {
-    // TODO (geofflang): Figure out why CopyTex[Sub]Image doesn't work with
-    // RGB->L on older Intel chips
-    if (IsIntel() && getPlatformRenderer() == EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE)
-    {
-        std::cout << "Test skipped on Intel OpenGL." << std::endl;
-        return;
-    }
-
     GLfloat color[] = {
         0.25f, 1.0f, 0.75f, 0.5f,
     };
@@ -267,14 +260,6 @@ TEST_P(CopyTexImageTest, SubImageRGBAToLA)
 
 TEST_P(CopyTexImageTest, SubImageRGBToL)
 {
-    // TODO (geofflang): Figure out why CopyTex[Sub]Image doesn't work with
-    // RGB->L on older Intel chips
-    if (IsIntel() && getPlatformRenderer() == EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE)
-    {
-        std::cout << "Test skipped on Intel OpenGL." << std::endl;
-        return;
-    }
-
     GLfloat color0[] = {
         0.25f, 1.0f, 0.75f, 0.5f,
     };
@@ -296,6 +281,36 @@ TEST_P(CopyTexImageTest, SubImageRGBToL)
         127, 127, 127, 255,
     };
     verifyResults(tex, expected1, 7, 7);
+}
+
+// Read default framebuffer with glCopyTexImage2D().
+TEST_P(CopyTexImageTest, DefaultFramebuffer)
+{
+    // Seems to be a bug in Mesa with the GLX back end: cannot read framebuffer until we draw to it.
+    // glCopyTexImage2D() below will fail without this clear.
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    const GLint w = getWindowWidth(), h = getWindowHeight();
+    GLTexture tex;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, w, h, 0);
+    EXPECT_GL_NO_ERROR();
+}
+
+// Read default framebuffer with glCopyTexSubImage2D().
+TEST_P(CopyTexImageTest, SubDefaultFramebuffer)
+{
+    // Seems to be a bug in Mesa with the GLX back end: cannot read framebuffer until we draw to it.
+    // glCopyTexSubImage2D() below will fail without this clear.
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    const GLint w = getWindowWidth(), h = getWindowHeight();
+    GLTexture tex;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+    EXPECT_GL_NO_ERROR();
 }
 
 // specialization of CopyTexImageTest is added so that some tests can be explicitly run with an ES3

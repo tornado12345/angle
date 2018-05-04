@@ -40,6 +40,21 @@ class ANGLE_EXPORT RNG
     std::default_random_engine mGenerator;
 };
 
+// Implemented inline to avoid cross-module allocation issues.
+inline void FillVectorWithRandomUBytes(RNG *rng, std::vector<uint8_t> *data)
+{
+    for (size_t i = 0; i < data->size(); ++i)
+    {
+        (*data)[i] = static_cast<uint8_t>(rng->randomIntBetween(0, 255));
+    }
+}
+
+inline void FillVectorWithRandomUBytes(std::vector<uint8_t> *data)
+{
+    RNG rng;
+    FillVectorWithRandomUBytes(&rng, data);
+}
+
 }  // namespace angle
 
 #endif // UTIL_RANDOM_UTILS_H

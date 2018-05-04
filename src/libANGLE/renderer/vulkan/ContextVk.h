@@ -10,7 +10,10 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_CONTEXTVK_H_
 #define LIBANGLE_RENDERER_VULKAN_CONTEXTVK_H_
 
+#include <vulkan/vulkan.h>
+
 #include "libANGLE/renderer/ContextImpl.h"
+#include "libANGLE/renderer/vulkan/vk_helpers.h"
 
 namespace rx
 {
@@ -24,35 +27,48 @@ class ContextVk : public ContextImpl
 
     gl::Error initialize() override;
 
+    void onDestroy(const gl::Context *context) override;
+
     // Flush and finish.
-    gl::Error flush() override;
-    gl::Error finish() override;
+    gl::Error flush(const gl::Context *context) override;
+    gl::Error finish(const gl::Context *context) override;
 
     // Drawing methods.
-    gl::Error drawArrays(GLenum mode, GLint first, GLsizei count) override;
-    gl::Error drawArraysInstanced(GLenum mode,
+    gl::Error drawArrays(const gl::Context *context,
+                         GLenum mode,
+                         GLint first,
+                         GLsizei count) override;
+    gl::Error drawArraysInstanced(const gl::Context *context,
+                                  GLenum mode,
                                   GLint first,
                                   GLsizei count,
                                   GLsizei instanceCount) override;
 
-    gl::Error drawElements(GLenum mode,
+    gl::Error drawElements(const gl::Context *context,
+                           GLenum mode,
                            GLsizei count,
                            GLenum type,
-                           const GLvoid *indices,
-                           const gl::IndexRange &indexRange) override;
-    gl::Error drawElementsInstanced(GLenum mode,
+                           const void *indices) override;
+    gl::Error drawElementsInstanced(const gl::Context *context,
+                                    GLenum mode,
                                     GLsizei count,
                                     GLenum type,
-                                    const GLvoid *indices,
-                                    GLsizei instances,
-                                    const gl::IndexRange &indexRange) override;
-    gl::Error drawRangeElements(GLenum mode,
+                                    const void *indices,
+                                    GLsizei instances) override;
+    gl::Error drawRangeElements(const gl::Context *context,
+                                GLenum mode,
                                 GLuint start,
                                 GLuint end,
                                 GLsizei count,
                                 GLenum type,
-                                const GLvoid *indices,
-                                const gl::IndexRange &indexRange) override;
+                                const void *indices) override;
+    gl::Error drawArraysIndirect(const gl::Context *context,
+                                 GLenum mode,
+                                 const void *indirect) override;
+    gl::Error drawElementsIndirect(const gl::Context *context,
+                                   GLenum mode,
+                                   GLenum type,
+                                   const void *indirect) override;
 
     // Device loss
     GLenum getResetStatus() override;
@@ -61,20 +77,24 @@ class ContextVk : public ContextImpl
     std::string getVendorString() const override;
     std::string getRendererDescription() const override;
 
-    // Debug markers.
+    // EXT_debug_marker
     void insertEventMarker(GLsizei length, const char *marker) override;
     void pushGroupMarker(GLsizei length, const char *marker) override;
     void popGroupMarker() override;
 
+    // KHR_debug
+    void pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message) override;
+    void popDebugGroup() override;
+
     // State sync with dirty bits.
-    void syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits) override;
+    void syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits) override;
 
     // Disjoint timer queries
     GLint getGPUDisjoint() override;
     GLint64 getTimestamp() override;
 
     // Context switching
-    void onMakeCurrent(const gl::ContextState &data) override;
+    void onMakeCurrent(const gl::Context *context) override;
 
     // Native capabilities, unmodified by gl::Context.
     const gl::Caps &getNativeCaps() const override;
@@ -94,7 +114,7 @@ class ContextVk : public ContextImpl
     TextureImpl *createTexture(const gl::TextureState &state) override;
 
     // Renderbuffer creation
-    RenderbufferImpl *createRenderbuffer() override;
+    RenderbufferImpl *createRenderbuffer(const gl::RenderbufferState &state) override;
 
     // Buffer creation
     BufferImpl *createBuffer(const gl::BufferState &state) override;
@@ -103,24 +123,73 @@ class ContextVk : public ContextImpl
     VertexArrayImpl *createVertexArray(const gl::VertexArrayState &state) override;
 
     // Query and Fence creation
-    QueryImpl *createQuery(GLenum type) override;
+    QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
-    FenceSyncImpl *createFenceSync() override;
+    SyncImpl *createSync() override;
 
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback(
         const gl::TransformFeedbackState &state) override;
 
     // Sampler object creation
-    SamplerImpl *createSampler() override;
+    SamplerImpl *createSampler(const gl::SamplerState &state) override;
+
+    // Program Pipeline object creation
+    ProgramPipelineImpl *createProgramPipeline(const gl::ProgramPipelineState &data) override;
 
     // Path object creation
     std::vector<PathImpl *> createPaths(GLsizei) override;
 
-  private:
-    RendererVk *mRenderer;
-};
+    gl::Error dispatchCompute(const gl::Context *context,
+                              GLuint numGroupsX,
+                              GLuint numGroupsY,
+                              GLuint numGroupsZ) override;
+    gl::Error dispatchComputeIndirect(const gl::Context *context, GLintptr indirect) override;
 
+    gl::Error memoryBarrier(const gl::Context *context, GLbitfield barriers) override;
+    gl::Error memoryBarrierByRegion(const gl::Context *context, GLbitfield barriers) override;
+
+    VkDevice getDevice() const;
+    RendererVk *getRenderer() { return mRenderer; }
+
+    void invalidateCurrentPipeline();
+
+    vk::DynamicDescriptorPool *getDynamicDescriptorPool();
+
+    const VkClearValue &getClearColorValue() const;
+    const VkClearValue &getClearDepthStencilValue() const;
+    VkColorComponentFlags getClearColorMask() const;
+    const VkRect2D &getScissor() const { return mPipelineDesc->getScissor(); }
+
+  private:
+    gl::Error initPipeline();
+    gl::Error setupDraw(const gl::DrawCallParams &drawCallParams,
+                        vk::CommandGraphNode **drawNodeOut,
+                        bool *newCommandBufferOut);
+
+    void updateScissor(const gl::State &glState);
+
+    RendererVk *mRenderer;
+    vk::PipelineAndSerial *mCurrentPipeline;
+    GLenum mCurrentDrawMode;
+
+    // Keep a cached pipeline description structure that can be used to query the pipeline cache.
+    // Kept in a pointer so allocations can be aligned, and structs can be portably packed.
+    std::unique_ptr<vk::PipelineDesc> mPipelineDesc;
+
+    // The dynamic descriptor pool is externally sychronized, so cannot be accessed from different
+    // threads simultaneously. Hence, we keep it in the ContextVk instead of the RendererVk.
+    vk::DynamicDescriptorPool mDynamicDescriptorPool;
+
+    // Triggers adding dependencies to the command graph.
+    bool mTexturesDirty;
+    bool mVertexArrayBindingHasChanged;
+
+    // Cached clear value/mask for color and depth/stencil.
+    VkClearValue mClearColorValue;
+    VkClearValue mClearDepthStencilValue;
+    VkColorComponentFlags mClearColorMask;
+};
 }  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_VULKAN_CONTEXTVK_H_

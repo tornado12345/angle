@@ -144,13 +144,13 @@
 
     WindowSurfaceCGL::WindowSurfaceCGL(const egl::SurfaceState &state,
                                        RendererGL *renderer,
-                                       CALayer *layer,
+                                       EGLNativeWindowType layer,
                                        const FunctionsGL *functions,
                                        CGLContextObj context)
         : SurfaceGL(state, renderer),
           mSwapLayer(nil),
           mCurrentSwapId(0),
-          mLayer(layer),
+          mLayer(reinterpret_cast<CALayer *>(layer)),
           mContext(context),
           mFunctions(functions),
           mStateManager(renderer->getStateManager()),
@@ -194,7 +194,7 @@ WindowSurfaceCGL::~WindowSurfaceCGL()
     }
 }
 
-egl::Error WindowSurfaceCGL::initialize()
+egl::Error WindowSurfaceCGL::initialize(const egl::Display *display)
 {
     unsigned width  = getWidth();
     unsigned height = getHeight();
@@ -202,7 +202,7 @@ egl::Error WindowSurfaceCGL::initialize()
     for (size_t i = 0; i < ArraySize(mSwapState.textures); ++i)
     {
         mFunctions->genTextures(1, &mSwapState.textures[i].texture);
-        mStateManager->bindTexture(GL_TEXTURE_2D, mSwapState.textures[i].texture);
+        mStateManager->bindTexture(gl::TextureType::_2D, mSwapState.textures[i].texture);
         mFunctions->texImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
                                GL_UNSIGNED_BYTE, nullptr);
         mSwapState.textures[i].width  = width;
@@ -237,7 +237,7 @@ egl::Error WindowSurfaceCGL::makeCurrent()
     return egl::Error(EGL_SUCCESS);
 }
 
-egl::Error WindowSurfaceCGL::swap()
+egl::Error WindowSurfaceCGL::swap(const gl::Context *context)
 {
     mFunctions->flush();
     mSwapState.beingRendered->swapId = ++mCurrentSwapId;
@@ -254,7 +254,7 @@ egl::Error WindowSurfaceCGL::swap()
 
     if (texture.width != width || texture.height != height)
     {
-        mStateManager->bindTexture(GL_TEXTURE_2D, texture.texture);
+        mStateManager->bindTexture(gl::TextureType::_2D, texture.texture);
         mFunctions->texImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
                                GL_UNSIGNED_BYTE, nullptr);
 
@@ -272,7 +272,11 @@ egl::Error WindowSurfaceCGL::swap()
     return egl::Error(EGL_SUCCESS);
 }
 
-egl::Error WindowSurfaceCGL::postSubBuffer(EGLint x, EGLint y, EGLint width, EGLint height)
+egl::Error WindowSurfaceCGL::postSubBuffer(const gl::Context *context,
+                                           EGLint x,
+                                           EGLint y,
+                                           EGLint width,
+                                           EGLint height)
 {
     UNIMPLEMENTED();
     return egl::Error(EGL_SUCCESS);
@@ -284,13 +288,15 @@ egl::Error WindowSurfaceCGL::querySurfacePointerANGLE(EGLint attribute, void **v
     return egl::Error(EGL_SUCCESS);
 }
 
-egl::Error WindowSurfaceCGL::bindTexImage(gl::Texture *texture, EGLint buffer)
+egl::Error WindowSurfaceCGL::bindTexImage(const gl::Context *context,
+                                          gl::Texture *texture,
+                                          EGLint buffer)
 {
     UNIMPLEMENTED();
     return egl::Error(EGL_SUCCESS);
 }
 
-egl::Error WindowSurfaceCGL::releaseTexImage(EGLint buffer)
+egl::Error WindowSurfaceCGL::releaseTexImage(const gl::Context *context, EGLint buffer)
 {
     UNIMPLEMENTED();
     return egl::Error(EGL_SUCCESS);
@@ -326,7 +332,7 @@ FramebufferImpl *WindowSurfaceCGL::createDefaultFramebuffer(const gl::Framebuffe
 {
     // TODO(cwallez) assert it happens only once?
     return new FramebufferGL(mFramebuffer, state, mFunctions, mWorkarounds, mRenderer->getBlitter(),
-                             mStateManager);
+                             mRenderer->getMultiviewClearer(), mStateManager);
 }
 
-}
+}  // namespace rx

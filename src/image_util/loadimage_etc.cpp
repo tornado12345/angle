@@ -16,9 +16,12 @@ namespace angle
 {
 namespace
 {
+
+using IntensityModifier = const int[4];
+
 // Table 3.17.2 sorted according to table 3.17.3
 // clang-format off
-static const int intensityModifierDefault[][4] =
+static IntensityModifier intensityModifierDefault[] =
 {
     {  2,   8,  -2,   -8 },
     {  5,  17,  -5,  -17 },
@@ -33,7 +36,7 @@ static const int intensityModifierDefault[][4] =
 
 // Table C.12, intensity modifier for non opaque punchthrough alpha
 // clang-format off
-static const int intensityModifierNonOpaque[][4] =
+static IntensityModifier intensityModifierNonOpaque[] =
 {
     { 0,   8, 0,   -8 },
     { 0,  17, 0,  -17 },
@@ -50,15 +53,15 @@ static const int kNumPixelsInBlock = 16;
 
 struct ETC2Block
 {
-    // Decodes unsigned single or dual channel block to bytes
-    void decodeAsSingleChannel(uint8_t *dest,
-                               size_t x,
-                               size_t y,
-                               size_t w,
-                               size_t h,
-                               size_t destPixelStride,
-                               size_t destRowPitch,
-                               bool isSigned) const
+    // Decodes unsigned single or dual channel ETC2 block to 8-bit color
+    void decodeAsSingleETC2Channel(uint8_t *dest,
+                                   size_t x,
+                                   size_t y,
+                                   size_t w,
+                                   size_t h,
+                                   size_t destPixelStride,
+                                   size_t destRowPitch,
+                                   bool isSigned) const
     {
         for (size_t j = 0; j < 4 && (y + j) < h; j++)
         {
@@ -68,11 +71,40 @@ struct ETC2Block
                 uint8_t *pixel = row + (i * destPixelStride);
                 if (isSigned)
                 {
-                    *pixel = clampSByte(getSingleChannel(i, j, isSigned));
+                    *pixel = clampSByte(getSingleETC2Channel(i, j, isSigned));
                 }
                 else
                 {
-                    *pixel = clampByte(getSingleChannel(i, j, isSigned));
+                    *pixel = clampByte(getSingleETC2Channel(i, j, isSigned));
+                }
+            }
+        }
+    }
+
+    // Decodes unsigned single or dual channel EAC block to 16-bit color
+    void decodeAsSingleEACChannel(uint16_t *dest,
+                                  size_t x,
+                                  size_t y,
+                                  size_t w,
+                                  size_t h,
+                                  size_t destPixelStride,
+                                  size_t destRowPitch,
+                                  bool isSigned) const
+    {
+        for (size_t j = 0; j < 4 && (y + j) < h; j++)
+        {
+            uint16_t *row = reinterpret_cast<uint16_t *>(reinterpret_cast<uint8_t *>(dest) +
+                                                         (j * destRowPitch));
+            for (size_t i = 0; i < 4 && (x + i) < w; i++)
+            {
+                uint16_t *pixel = row + (i * destPixelStride);
+                if (isSigned)
+                {
+                    *pixel = renormalizeSignedEAC(getSingleEACChannel(i, j, isSigned));
+                }
+                else
+                {
+                    *pixel = renormalizeUnsignedEAC(getSingleEACChannel(i, j, isSigned));
                 }
             }
         }
@@ -325,6 +357,19 @@ struct ETC2Block
         return static_cast<signed char>(gl::clamp(value, -128, 127));
     }
 
+    static uint16_t renormalizeUnsignedEAC(int value)
+    {
+        // Data is in the range 0 to 2047, clamp it and then scale it to 16-bit
+        return static_cast<uint16_t>(gl::clamp(value, 0, 2047)) << 5;
+    }
+
+    static int16_t renormalizeSignedEAC(int value)
+    {
+        // Data is in the range -1023 to 1023, clamp it and then scale it to 16-bit
+        // The spec states that -1024 invalid and should be clamped to -1023
+        return static_cast<int16_t>(gl::clamp(value, -1023, 1023)) * 32;
+    }
+
     static R8G8B8A8 createRGBA(int red, int green, int blue, int alpha)
     {
         R8G8B8A8 rgba;
@@ -400,7 +445,7 @@ struct ETC2Block
                                              const uint8_t alphaValues[4][4],
                                              bool nonOpaquePunchThroughAlpha) const
     {
-        const auto intensityModifier =
+        const IntensityModifier *intensityModifier =
             nonOpaquePunchThroughAlpha ? intensityModifierNonOpaque : intensityModifierDefault;
 
         R8G8B8A8 subblockColors0[4];
@@ -528,8 +573,9 @@ struct ETC2Block
         int b2 = extend_4to8bits(block.HB2);
 
         static const int distance[8] = {3, 6, 11, 16, 23, 32, 41, 64};
-        const int d                  = distance[(block.Hda << 2) | (block.Hdb << 1) |
-                               ((r1 << 16 | g1 << 8 | b1) >= (r2 << 16 | g2 << 8 | b2) ? 1 : 0)];
+        const int orderingTrickBit =
+            ((r1 << 16 | g1 << 8 | b1) >= (r2 << 16 | g2 << 8 | b2) ? 1 : 0);
+        const int d = distance[(block.Hda << 2) | (block.Hdb << 1) | orderingTrickBit];
 
         const R8G8B8A8 paintColors[4] = {
             createRGBA(r1 + d, g1 + d, b1 + d), createRGBA(r1 - d, g1 - d, b1 - d),
@@ -1077,7 +1123,7 @@ struct ETC2Block
 
         static const size_t kNumColors = 8;
 
-        const auto intensityModifier =
+        const IntensityModifier *intensityModifier =
             nonOpaquePunchThroughAlpha ? intensityModifierNonOpaque : intensityModifierDefault;
 
         // Compute the colors that pixels can have in each subblock both for
@@ -1129,8 +1175,48 @@ struct ETC2Block
                               const uint8_t alphaValues[4][4],
                               bool nonOpaquePunchThroughAlpha) const
     {
-        // TODO (mgong): Will be implemented soon
-        UNIMPLEMENTED();
+        static const size_t kNumColors = 4;
+
+        // Table C.8, distance index for T and H modes
+        const auto &block = u.idht.mode.tm;
+
+        int r1 = extend_4to8bits(block.TR1a << 2 | block.TR1b);
+        int g1 = extend_4to8bits(block.TG1);
+        int b1 = extend_4to8bits(block.TB1);
+        int r2 = extend_4to8bits(block.TR2);
+        int g2 = extend_4to8bits(block.TG2);
+        int b2 = extend_4to8bits(block.TB2);
+
+        static int distance[8] = {3, 6, 11, 16, 23, 32, 41, 64};
+        const int d            = distance[block.Tda << 1 | block.Tdb];
+
+        // In ETC opaque punch through formats, index == 2 means transparent pixel.
+        // Thus we don't need to compute its color, just assign it as black.
+        const R8G8B8A8 paintColors[kNumColors] = {
+            createRGBA(r1, g1, b1), createRGBA(r2 + d, g2 + d, b2 + d),
+            nonOpaquePunchThroughAlpha ? createRGBA(0, 0, 0, 0) : createRGBA(r2, g2, b2),
+            createRGBA(r2 - d, g2 - d, b2 - d),
+        };
+
+        int pixelIndices[kNumPixelsInBlock];
+        int pixelIndexCounts[kNumColors] = {0};
+        for (size_t j = 0; j < 4; j++)
+        {
+            int *row = &pixelIndices[j * 4];
+            for (size_t i = 0; i < 4; i++)
+            {
+                const size_t pixelIndex = getIndex(i, j);
+                row[i]                  = static_cast<int>(pixelIndex);
+                pixelIndexCounts[pixelIndex]++;
+            }
+        }
+
+        int minColorIndex, maxColorIndex;
+        selectEndPointPCA(pixelIndexCounts, paintColors, kNumColors, &minColorIndex,
+                          &maxColorIndex);
+
+        packBC1(dest, pixelIndices, pixelIndexCounts, paintColors, kNumColors, minColorIndex,
+                maxColorIndex, nonOpaquePunchThroughAlpha);
     }
 
     void transcodeHBlockToBC1(uint8_t *dest,
@@ -1141,8 +1227,51 @@ struct ETC2Block
                               const uint8_t alphaValues[4][4],
                               bool nonOpaquePunchThroughAlpha) const
     {
-        // TODO (mgong): Will be implemented soon
-        UNIMPLEMENTED();
+        static const size_t kNumColors = 4;
+
+        // Table C.8, distance index for T and H modes
+        const auto &block = u.idht.mode.hm;
+
+        int r1 = extend_4to8bits(block.HR1);
+        int g1 = extend_4to8bits(block.HG1a << 1 | block.HG1b);
+        int b1 = extend_4to8bits(block.HB1a << 3 | block.HB1b << 1 | block.HB1c);
+        int r2 = extend_4to8bits(block.HR2);
+        int g2 = extend_4to8bits(block.HG2a << 1 | block.HG2b);
+        int b2 = extend_4to8bits(block.HB2);
+
+        static const int distance[8] = {3, 6, 11, 16, 23, 32, 41, 64};
+        const int orderingTrickBit =
+            ((r1 << 16 | g1 << 8 | b1) >= (r2 << 16 | g2 << 8 | b2) ? 1 : 0);
+        const int d = distance[(block.Hda << 2) | (block.Hdb << 1) | orderingTrickBit];
+
+        // In ETC opaque punch through formats, index == 2 means transparent pixel.
+        // Thus we don't need to compute its color, just assign it as black.
+        const R8G8B8A8 paintColors[kNumColors] = {
+            createRGBA(r1 + d, g1 + d, b1 + d), createRGBA(r1 - d, g1 - d, b1 - d),
+            nonOpaquePunchThroughAlpha ? createRGBA(0, 0, 0, 0)
+                                       : createRGBA(r2 + d, g2 + d, b2 + d),
+            createRGBA(r2 - d, g2 - d, b2 - d),
+        };
+
+        int pixelIndices[kNumPixelsInBlock];
+        int pixelIndexCounts[kNumColors] = {0};
+        for (size_t j = 0; j < 4; j++)
+        {
+            int *row = &pixelIndices[j * 4];
+            for (size_t i = 0; i < 4; i++)
+            {
+                const size_t pixelIndex = getIndex(i, j);
+                row[i]                  = static_cast<int>(pixelIndex);
+                pixelIndexCounts[pixelIndex]++;
+            }
+        }
+
+        int minColorIndex, maxColorIndex;
+        selectEndPointPCA(pixelIndexCounts, paintColors, kNumColors, &minColorIndex,
+                          &maxColorIndex);
+
+        packBC1(dest, pixelIndices, pixelIndexCounts, paintColors, kNumColors, minColorIndex,
+                maxColorIndex, nonOpaquePunchThroughAlpha);
     }
 
     void transcodePlanarBlockToBC1(uint8_t *dest,
@@ -1152,12 +1281,33 @@ struct ETC2Block
                                    size_t h,
                                    const uint8_t alphaValues[4][4]) const
     {
-        // TODO (mgong): Will be implemented soon
-        UNIMPLEMENTED();
+        static const size_t kNumColors = kNumPixelsInBlock;
+
+        R8G8B8A8 rgbaBlock[kNumColors];
+        decodePlanarBlock(reinterpret_cast<uint8_t *>(rgbaBlock), x, y, w, h, sizeof(R8G8B8A8) * 4,
+                          alphaValues);
+
+        // Planar block doesn't have a color table, fill indices as full
+        int pixelIndices[kNumPixelsInBlock] = {0, 1, 2,  3,  4,  5,  6,  7,
+                                               8, 9, 10, 11, 12, 13, 14, 15};
+        int pixelIndexCounts[kNumColors] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+
+        int minColorIndex, maxColorIndex;
+        selectEndPointPCA(pixelIndexCounts, rgbaBlock, kNumColors, &minColorIndex, &maxColorIndex);
+
+        packBC1(dest, pixelIndices, pixelIndexCounts, rgbaBlock, kNumColors, minColorIndex,
+                maxColorIndex, false);
     }
 
     // Single channel utility functions
-    int getSingleChannel(size_t x, size_t y, bool isSigned) const
+    int getSingleEACChannel(size_t x, size_t y, bool isSigned) const
+    {
+        int codeword   = isSigned ? u.scblk.base_codeword.s : u.scblk.base_codeword.us;
+        int multiplier = (u.scblk.multiplier == 0) ? 1 : u.scblk.multiplier * 8;
+        return codeword * 8 + 4 + getSingleChannelModifier(x, y) * multiplier;
+    }
+
+    int getSingleETC2Channel(size_t x, size_t y, bool isSigned) const
     {
         int codeword = isSigned ? u.scblk.base_codeword.s : u.scblk.base_codeword.us;
         return codeword + getSingleChannelModifier(x, y) * u.scblk.multiplier;
@@ -1227,8 +1377,8 @@ static const uint8_t DefaultETCAlphaValues[4][4] =
     { 255, 255, 255, 255 },
     { 255, 255, 255, 255 },
 };
-// clang-format on
 
+// clang-format on
 void LoadR11EACToR8(size_t width,
                     size_t height,
                     size_t depth,
@@ -1254,8 +1404,8 @@ void LoadR11EACToR8(size_t width,
                 const ETC2Block *sourceBlock = sourceRow + (x / 4);
                 uint8_t *destPixels          = destRow + x;
 
-                sourceBlock->decodeAsSingleChannel(destPixels, x, y, width, height, 1,
-                                                   outputRowPitch, isSigned);
+                sourceBlock->decodeAsSingleETC2Channel(destPixels, x, y, width, height, 1,
+                                                       outputRowPitch, isSigned);
             }
         }
     }
@@ -1285,13 +1435,81 @@ void LoadRG11EACToRG8(size_t width,
             {
                 uint8_t *destPixelsRed          = destRow + (x * 2);
                 const ETC2Block *sourceBlockRed = sourceRow + (x / 2);
-                sourceBlockRed->decodeAsSingleChannel(destPixelsRed, x, y, width, height, 2,
-                                                      outputRowPitch, isSigned);
+                sourceBlockRed->decodeAsSingleETC2Channel(destPixelsRed, x, y, width, height, 2,
+                                                          outputRowPitch, isSigned);
 
                 uint8_t *destPixelsGreen          = destPixelsRed + 1;
                 const ETC2Block *sourceBlockGreen = sourceBlockRed + 1;
-                sourceBlockGreen->decodeAsSingleChannel(destPixelsGreen, x, y, width, height, 2,
-                                                        outputRowPitch, isSigned);
+                sourceBlockGreen->decodeAsSingleETC2Channel(destPixelsGreen, x, y, width, height, 2,
+                                                            outputRowPitch, isSigned);
+            }
+        }
+    }
+}
+
+void LoadR11EACToR16(size_t width,
+                     size_t height,
+                     size_t depth,
+                     const uint8_t *input,
+                     size_t inputRowPitch,
+                     size_t inputDepthPitch,
+                     uint8_t *output,
+                     size_t outputRowPitch,
+                     size_t outputDepthPitch,
+                     bool isSigned)
+{
+    for (size_t z = 0; z < depth; z++)
+    {
+        for (size_t y = 0; y < height; y += 4)
+        {
+            const ETC2Block *sourceRow =
+                priv::OffsetDataPointer<ETC2Block>(input, y / 4, z, inputRowPitch, inputDepthPitch);
+            uint16_t *destRow =
+                priv::OffsetDataPointer<uint16_t>(output, y, z, outputRowPitch, outputDepthPitch);
+
+            for (size_t x = 0; x < width; x += 4)
+            {
+                const ETC2Block *sourceBlock = sourceRow + (x / 4);
+                uint16_t *destPixels         = destRow + x;
+
+                sourceBlock->decodeAsSingleEACChannel(destPixels, x, y, width, height, 1,
+                                                      outputRowPitch, isSigned);
+            }
+        }
+    }
+}
+
+void LoadRG11EACToRG16(size_t width,
+                       size_t height,
+                       size_t depth,
+                       const uint8_t *input,
+                       size_t inputRowPitch,
+                       size_t inputDepthPitch,
+                       uint8_t *output,
+                       size_t outputRowPitch,
+                       size_t outputDepthPitch,
+                       bool isSigned)
+{
+    for (size_t z = 0; z < depth; z++)
+    {
+        for (size_t y = 0; y < height; y += 4)
+        {
+            const ETC2Block *sourceRow =
+                priv::OffsetDataPointer<ETC2Block>(input, y / 4, z, inputRowPitch, inputDepthPitch);
+            uint16_t *destRow =
+                priv::OffsetDataPointer<uint16_t>(output, y, z, outputRowPitch, outputDepthPitch);
+
+            for (size_t x = 0; x < width; x += 4)
+            {
+                uint16_t *destPixelsRed         = destRow + (x * 2);
+                const ETC2Block *sourceBlockRed = sourceRow + (x / 2);
+                sourceBlockRed->decodeAsSingleEACChannel(destPixelsRed, x, y, width, height, 2,
+                                                         outputRowPitch, isSigned);
+
+                uint16_t *destPixelsGreen         = destPixelsRed + 1;
+                const ETC2Block *sourceBlockGreen = sourceBlockRed + 1;
+                sourceBlockGreen->decodeAsSingleEACChannel(destPixelsGreen, x, y, width, height, 2,
+                                                           outputRowPitch, isSigned);
             }
         }
     }
@@ -1386,7 +1604,7 @@ void LoadETC2RGBA8ToRGBA8(size_t width,
             for (size_t x = 0; x < width; x += 4)
             {
                 const ETC2Block *sourceBlockAlpha = sourceRow + (x / 2);
-                sourceBlockAlpha->decodeAsSingleChannel(
+                sourceBlockAlpha->decodeAsSingleETC2Channel(
                     reinterpret_cast<uint8_t *>(decodedAlphaValues), x, y, width, height, 1, 4,
                     false);
 
@@ -1485,6 +1703,62 @@ void LoadEACRG11SToRG8(size_t width,
                      outputRowPitch, outputDepthPitch, true);
 }
 
+void LoadEACR11ToR16(size_t width,
+                     size_t height,
+                     size_t depth,
+                     const uint8_t *input,
+                     size_t inputRowPitch,
+                     size_t inputDepthPitch,
+                     uint8_t *output,
+                     size_t outputRowPitch,
+                     size_t outputDepthPitch)
+{
+    LoadR11EACToR16(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
+                    outputRowPitch, outputDepthPitch, false);
+}
+
+void LoadEACR11SToR16(size_t width,
+                      size_t height,
+                      size_t depth,
+                      const uint8_t *input,
+                      size_t inputRowPitch,
+                      size_t inputDepthPitch,
+                      uint8_t *output,
+                      size_t outputRowPitch,
+                      size_t outputDepthPitch)
+{
+    LoadR11EACToR16(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
+                    outputRowPitch, outputDepthPitch, true);
+}
+
+void LoadEACRG11ToRG16(size_t width,
+                       size_t height,
+                       size_t depth,
+                       const uint8_t *input,
+                       size_t inputRowPitch,
+                       size_t inputDepthPitch,
+                       uint8_t *output,
+                       size_t outputRowPitch,
+                       size_t outputDepthPitch)
+{
+    LoadRG11EACToRG16(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
+                      outputRowPitch, outputDepthPitch, false);
+}
+
+void LoadEACRG11SToRG16(size_t width,
+                        size_t height,
+                        size_t depth,
+                        const uint8_t *input,
+                        size_t inputRowPitch,
+                        size_t inputDepthPitch,
+                        uint8_t *output,
+                        size_t outputRowPitch,
+                        size_t outputDepthPitch)
+{
+    LoadRG11EACToRG16(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
+                      outputRowPitch, outputDepthPitch, true);
+}
+
 void LoadETC2RGB8ToRGBA8(size_t width,
                          size_t height,
                          size_t depth,
@@ -1497,6 +1771,20 @@ void LoadETC2RGB8ToRGBA8(size_t width,
 {
     LoadETC2RGB8ToRGBA8(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
                         outputRowPitch, outputDepthPitch, false);
+}
+
+void LoadETC2RGB8ToBC1(size_t width,
+                       size_t height,
+                       size_t depth,
+                       const uint8_t *input,
+                       size_t inputRowPitch,
+                       size_t inputDepthPitch,
+                       uint8_t *output,
+                       size_t outputRowPitch,
+                       size_t outputDepthPitch)
+{
+    LoadETC2RGB8ToBC1(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
+                      outputRowPitch, outputDepthPitch, false);
 }
 
 void LoadETC2SRGB8ToRGBA8(size_t width,
@@ -1513,6 +1801,20 @@ void LoadETC2SRGB8ToRGBA8(size_t width,
                         outputRowPitch, outputDepthPitch, false);
 }
 
+void LoadETC2SRGB8ToBC1(size_t width,
+                        size_t height,
+                        size_t depth,
+                        const uint8_t *input,
+                        size_t inputRowPitch,
+                        size_t inputDepthPitch,
+                        uint8_t *output,
+                        size_t outputRowPitch,
+                        size_t outputDepthPitch)
+{
+    LoadETC2RGB8ToBC1(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
+                      outputRowPitch, outputDepthPitch, false);
+}
+
 void LoadETC2RGB8A1ToRGBA8(size_t width,
                            size_t height,
                            size_t depth,
@@ -1527,6 +1829,20 @@ void LoadETC2RGB8A1ToRGBA8(size_t width,
                         outputRowPitch, outputDepthPitch, true);
 }
 
+void LoadETC2RGB8A1ToBC1(size_t width,
+                         size_t height,
+                         size_t depth,
+                         const uint8_t *input,
+                         size_t inputRowPitch,
+                         size_t inputDepthPitch,
+                         uint8_t *output,
+                         size_t outputRowPitch,
+                         size_t outputDepthPitch)
+{
+    LoadETC2RGB8ToBC1(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
+                      outputRowPitch, outputDepthPitch, true);
+}
+
 void LoadETC2SRGB8A1ToRGBA8(size_t width,
                             size_t height,
                             size_t depth,
@@ -1539,6 +1855,20 @@ void LoadETC2SRGB8A1ToRGBA8(size_t width,
 {
     LoadETC2RGB8ToRGBA8(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
                         outputRowPitch, outputDepthPitch, true);
+}
+
+void LoadETC2SRGB8A1ToBC1(size_t width,
+                          size_t height,
+                          size_t depth,
+                          const uint8_t *input,
+                          size_t inputRowPitch,
+                          size_t inputDepthPitch,
+                          uint8_t *output,
+                          size_t outputRowPitch,
+                          size_t outputDepthPitch)
+{
+    LoadETC2RGB8ToBC1(width, height, depth, input, inputRowPitch, inputDepthPitch, output,
+                      outputRowPitch, outputDepthPitch, true);
 }
 
 void LoadETC2RGBA8ToRGBA8(size_t width,

@@ -9,22 +9,23 @@
 #include "common/debug.h"
 #include "compiler/preprocessor/numeric_lex.h"
 
+namespace angle
+{
+
 namespace pp
 {
 
 void Token::reset()
 {
-    type = 0;
-    flags = 0;
+    type     = 0;
+    flags    = 0;
     location = SourceLocation();
     text.clear();
 }
 
 bool Token::equals(const Token &other) const
 {
-    return (type == other.type) &&
-           (flags == other.flags) &&
-           (location == other.location) &&
+    return (type == other.type) && (flags == other.flags) && (location == other.location) &&
            (text == other.text);
 }
 
@@ -80,3 +81,5 @@ std::ostream &operator<<(std::ostream &out, const Token &token)
 }
 
 }  // namespace pp
+
+}  // namespace angle

@@ -31,11 +31,7 @@ class DebugMarkerTest : public ANGLETest
 // The debug markers can be validated by capturing this test under PIX/Graphics Diagnostics.
 TEST_P(DebugMarkerTest, BasicValidation)
 {
-    if (!extensionEnabled("GL_EXT_debug_marker"))
-    {
-        std::cout << "Test skipped due to missing GL_EXT_debug_marker" << std::endl;
-        return;
-    }
+    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_EXT_debug_marker"));
 
     std::string eventMarkerCaption = "Test event marker caption";
     std::string groupMarkerCaption = "Test group marker caption";
@@ -52,7 +48,7 @@ TEST_P(DebugMarkerTest, BasicValidation)
     glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glPushGroupMarkerEXT(0, NULL);
+    glPushGroupMarkerEXT(0, nullptr);
     glClearColor(0.0f, 1.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 

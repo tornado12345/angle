@@ -24,28 +24,9 @@ protected:
     }
 };
 
-TEST_P(DiscardFramebufferEXTTest, ExtensionEnabled)
-{
-    EGLPlatformParameters platform = GetParam().eglParameters;
-
-    if (platform.renderer == EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE)
-    {
-        EXPECT_TRUE(extensionEnabled("EXT_discard_framebuffer"));
-    }
-    else
-    {
-        // Other platforms don't currently implement this extension
-        EXPECT_FALSE(extensionEnabled("EXT_discard_framebuffer"));
-    }
-}
-
 TEST_P(DiscardFramebufferEXTTest, DefaultFramebuffer)
 {
-    if (!extensionEnabled("EXT_discard_framebuffer"))
-    {
-        std::cout << "Test skipped because EXT_discard_framebuffer is not available." << std::endl;
-        return;
-    }
+    ANGLE_SKIP_TEST_IF(!extensionEnabled("EXT_discard_framebuffer"));
 
     // These should succeed on the default framebuffer
     const GLenum discards1[] = { GL_COLOR_EXT };
@@ -80,11 +61,7 @@ TEST_P(DiscardFramebufferEXTTest, DefaultFramebuffer)
 
 TEST_P(DiscardFramebufferEXTTest, NonDefaultFramebuffer)
 {
-    if (!extensionEnabled("EXT_discard_framebuffer"))
-    {
-        std::cout << "Test skipped because EXT_discard_framebuffer is not available." << std::endl;
-        return;
-    }
+    ANGLE_SKIP_TEST_IF(!extensionEnabled("EXT_discard_framebuffer"));
 
     GLuint tex2D;
     GLuint framebuffer;
@@ -95,7 +72,8 @@ TEST_P(DiscardFramebufferEXTTest, NonDefaultFramebuffer)
     glGenFramebuffers(1, &framebuffer);
     glBindTexture(GL_TEXTURE_2D, tex2D);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, getWindowWidth(), getWindowHeight(), 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, getWindowWidth(), getWindowHeight(), 0, GL_RGB,
+                 GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex2D, 0);

@@ -17,7 +17,10 @@
 namespace angle
 {
 
+struct CompilerParameters;
 struct PlatformParameters;
+
+bool IsPlatformAvailable(const CompilerParameters &param);
 
 bool IsPlatformAvailable(const PlatformParameters &param);
 
@@ -37,6 +40,12 @@ std::vector<T> FilterTestParams(const T *params, size_t numParams)
     }
 
     return filtered;
+}
+
+template <typename T>
+std::vector<T> FilterTestParams(const std::vector<T> &params)
+{
+    return FilterTestParams(params.data(), params.size());
 }
 
 // Instantiate the test once for each extra argument. The types of all the

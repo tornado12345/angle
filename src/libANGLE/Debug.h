@@ -31,6 +31,7 @@ class Debug : angle::NonCopyable
 {
   public:
     Debug();
+    ~Debug();
 
     void setMaxLoggedMessages(GLuint maxLoggedMessages);
 
@@ -48,12 +49,12 @@ class Debug : angle::NonCopyable
                        GLenum type,
                        GLuint id,
                        GLenum severity,
-                       const std::string &message);
+                       const std::string &message) const;
     void insertMessage(GLenum source,
                        GLenum type,
                        GLuint id,
                        GLenum severity,
-                       std::string &&message);
+                       std::string &&message) const;
 
     void setMessageControl(GLenum source,
                            GLenum type,
@@ -91,6 +92,10 @@ class Debug : angle::NonCopyable
 
     struct Control
     {
+        Control();
+        ~Control();
+        Control(const Control &other);
+
         GLenum source;
         GLenum type;
         GLenum severity;
@@ -100,6 +105,10 @@ class Debug : angle::NonCopyable
 
     struct Group
     {
+        Group();
+        ~Group();
+        Group(const Group &other);
+
         GLenum source;
         GLuint id;
         std::string message;
@@ -110,7 +119,7 @@ class Debug : angle::NonCopyable
     bool mOutputEnabled;
     GLDEBUGPROCKHR mCallbackFunction;
     const void *mCallbackUserParam;
-    std::deque<Message> mMessages;
+    mutable std::deque<Message> mMessages;
     GLuint mMaxLoggedMessages;
     bool mOutputSynchronous;
     std::vector<Group> mGroups;

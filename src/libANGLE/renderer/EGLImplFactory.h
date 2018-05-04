@@ -17,6 +17,7 @@ namespace egl
 class AttributeMap;
 struct Config;
 class ImageSibling;
+struct ImageState;
 struct SurfaceState;
 }
 
@@ -39,29 +40,25 @@ class EGLImplFactory : angle::NonCopyable
     virtual ~EGLImplFactory() {}
 
     virtual SurfaceImpl *createWindowSurface(const egl::SurfaceState &state,
-                                             const egl::Config *configuration,
                                              EGLNativeWindowType window,
                                              const egl::AttributeMap &attribs) = 0;
     virtual SurfaceImpl *createPbufferSurface(const egl::SurfaceState &state,
-                                              const egl::Config *configuration,
                                               const egl::AttributeMap &attribs) = 0;
     virtual SurfaceImpl *createPbufferFromClientBuffer(const egl::SurfaceState &state,
-                                                       const egl::Config *configuration,
                                                        EGLenum buftype,
                                                        EGLClientBuffer clientBuffer,
                                                        const egl::AttributeMap &attribs) = 0;
     virtual SurfaceImpl *createPixmapSurface(const egl::SurfaceState &state,
-                                             const egl::Config *configuration,
                                              NativePixmapType nativePixmap,
                                              const egl::AttributeMap &attribs) = 0;
 
-    virtual ImageImpl *createImage(EGLenum target,
-                                   egl::ImageSibling *buffer,
+    virtual ImageImpl *createImage(const egl::ImageState &state,
+                                   EGLenum target,
                                    const egl::AttributeMap &attribs) = 0;
 
     virtual ContextImpl *createContext(const gl::ContextState &state) = 0;
 
-    virtual StreamProducerImpl *createStreamProducerD3DTextureNV12(
+    virtual StreamProducerImpl *createStreamProducerD3DTexture(
         egl::Stream::ConsumerType consumerType,
         const egl::AttributeMap &attribs) = 0;
 };

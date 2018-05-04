@@ -7,21 +7,16 @@
 #ifndef COMPILER_PREPROCESSOR_SOURCELOCATION_H_
 #define COMPILER_PREPROCESSOR_SOURCELOCATION_H_
 
+namespace angle
+{
+
 namespace pp
 {
 
 struct SourceLocation
 {
-    SourceLocation()
-        : file(0),
-          line(0)
-    {
-    }
-    SourceLocation(int f, int l)
-        : file(f),
-          line(l)
-    {
-    }
+    SourceLocation() : file(0), line(0) {}
+    SourceLocation(int f, int l) : file(f), line(l) {}
 
     bool equals(const SourceLocation &other) const
     {
@@ -43,5 +38,7 @@ inline bool operator!=(const SourceLocation &lhs, const SourceLocation &rhs)
 }
 
 }  // namespace pp
+
+}  // namespace angle
 
 #endif  // COMPILER_PREPROCESSOR_SOURCELOCATION_H_

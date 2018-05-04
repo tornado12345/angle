@@ -12,214 +12,74 @@
 
 #include "compiler/translator/BaseTypes.h"
 #include "compiler/translator/Common.h"
+#include "compiler/translator/ImmutableString.h"
+#include "compiler/translator/SymbolUniqueId.h"
+
+namespace sh
+{
 
 struct TPublicType;
 class TType;
+class TInterfaceBlock;
+class TStructure;
 class TSymbol;
+class TVariable;
 class TIntermSymbol;
+class TSymbolTable;
 
 class TField : angle::NonCopyable
 {
   public:
     POOL_ALLOCATOR_NEW_DELETE();
-    TField(TType *type, TString *name, const TSourceLoc &line)
-        : mType(type),
-          mName(name),
-          mLine(line)
+    TField(TType *type, const ImmutableString &name, const TSourceLoc &line)
+        : mType(type), mName(name), mLine(line)
     {
     }
 
     // TODO(alokp): We should only return const type.
     // Fix it by tweaking grammar.
-    TType *type()
-    {
-        return mType;
-    }
-    const TType *type() const
-    {
-        return mType;
-    }
-
-    const TString &name() const
-    {
-        return *mName;
-    }
-    const TSourceLoc &line() const
-    {
-        return mLine;
-    }
+    TType *type() { return mType; }
+    const TType *type() const { return mType; }
+    const ImmutableString &name() const { return mName; }
+    const TSourceLoc &line() const { return mLine; }
 
   private:
     TType *mType;
-    TString *mName;
-    TSourceLoc mLine;
+    const ImmutableString mName;
+    const TSourceLoc mLine;
 };
 
 typedef TVector<TField *> TFieldList;
-inline TFieldList *NewPoolTFieldList()
-{
-    void *memory = GetGlobalPoolAllocator()->allocate(sizeof(TFieldList));
-    return new(memory) TFieldList;
-}
 
 class TFieldListCollection : angle::NonCopyable
 {
   public:
-    const TString &name() const
-    {
-        return *mName;
-    }
-    const TFieldList &fields() const
-    {
-        return *mFields;
-    }
+    const TFieldList &fields() const { return *mFields; }
 
-    size_t objectSize() const
-    {
-        if (mObjectSize == 0)
-            mObjectSize = calculateObjectSize();
-        return mObjectSize;
-    };
-
-  protected:
-    TFieldListCollection(const TString *name, TFieldList *fields)
-        : mName(name),
-          mFields(fields),
-          mObjectSize(0)
-    {
-    }
-    TString buildMangledName(const TString &mangledNamePrefix) const;
-    size_t calculateObjectSize() const;
-
-    const TString *mName;
-    TFieldList *mFields;
-
-    mutable TString mMangledName;
-    mutable size_t mObjectSize;
-};
-
-// May also represent interface blocks
-class TStructure : public TFieldListCollection
-{
-  public:
-    POOL_ALLOCATOR_NEW_DELETE();
-    TStructure(const TString *name, TFieldList *fields);
-
-    int deepestNesting() const
-    {
-        if (mDeepestNesting == 0)
-            mDeepestNesting = calculateDeepestNesting();
-        return mDeepestNesting;
-    }
     bool containsArrays() const;
+    bool containsMatrices() const;
     bool containsType(TBasicType t) const;
     bool containsSamplers() const;
-    bool containsImages() const;
 
-    void createSamplerSymbols(const TString &structName,
-                              const TString &structAPIName,
-                              const unsigned int arrayOfStructsSize,
-                              TVector<TIntermSymbol *> *outputSymbols,
-                              TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames) const;
+    size_t objectSize() const;
+    // How many locations the field list consumes as a uniform.
+    int getLocationCount() const;
+    int deepestNesting() const;
+    const TString &mangledFieldList() const;
 
-    bool equals(const TStructure &other) const;
+  protected:
+    TFieldListCollection(const TFieldList *fields);
 
-    void setUniqueId(int uniqueId)
-    {
-        mUniqueId = uniqueId;
-    }
-
-    int uniqueId() const
-    {
-        ASSERT(mUniqueId != 0);
-        return mUniqueId;
-    }
-
-    void setAtGlobalScope(bool atGlobalScope)
-    {
-        mAtGlobalScope = atGlobalScope;
-    }
-
-    bool atGlobalScope() const
-    {
-        return mAtGlobalScope;
-    }
-
-    const TString &mangledName() const
-    {
-        if (mMangledName.empty())
-            mMangledName = buildMangledName("struct-");
-        return mMangledName;
-    }
+    const TFieldList *mFields;
 
   private:
-    // TODO(zmo): Find a way to get rid of the const_cast in function
-    // setName().  At the moment keep this function private so only
-    // friend class RegenerateStructNames may call it.
-    friend class RegenerateStructNames;
-    void setName(const TString &name)
-    {
-        TString *mutableName = const_cast<TString *>(mName);
-        *mutableName = name;
-    }
-
+    size_t calculateObjectSize() const;
     int calculateDeepestNesting() const;
+    TString buildMangledFieldList() const;
 
+    mutable size_t mObjectSize;
     mutable int mDeepestNesting;
-    int mUniqueId;
-    bool mAtGlobalScope;
-};
-
-class TInterfaceBlock : public TFieldListCollection
-{
-  public:
-    POOL_ALLOCATOR_NEW_DELETE();
-    TInterfaceBlock(const TString *name, TFieldList *fields, const TString *instanceName,
-                    int arraySize, const TLayoutQualifier &layoutQualifier)
-        : TFieldListCollection(name, fields),
-          mInstanceName(instanceName),
-          mArraySize(arraySize),
-          mBlockStorage(layoutQualifier.blockStorage),
-          mMatrixPacking(layoutQualifier.matrixPacking)
-    {
-    }
-
-    const TString &instanceName() const
-    {
-        return *mInstanceName;
-    }
-    bool hasInstanceName() const
-    {
-        return mInstanceName != NULL;
-    }
-    bool isArray() const
-    {
-        return mArraySize > 0;
-    }
-    int arraySize() const
-    {
-        return mArraySize;
-    }
-    TLayoutBlockStorage blockStorage() const
-    {
-        return mBlockStorage;
-    }
-    TLayoutMatrixPacking matrixPacking() const
-    {
-        return mMatrixPacking;
-    }
-    const TString &mangledName() const
-    {
-        if (mMangledName.empty())
-            mMangledName = buildMangledName("iblock-");
-        return mMangledName;
-    }
-
-  private:
-    const TString *mInstanceName; // for interface block instance names
-    int mArraySize; // 0 if not an array
-    TLayoutBlockStorage mBlockStorage;
-    TLayoutMatrixPacking mMatrixPacking;
+    mutable TString mMangledFieldList;
 };
 
 //
@@ -229,152 +89,81 @@ class TType
 {
   public:
     POOL_ALLOCATOR_NEW_DELETE();
-    TType()
-        : type(EbtVoid),
-          precision(EbpUndefined),
-          qualifier(EvqGlobal),
-          invariant(false),
-          memoryQualifier(TMemoryQualifier::create()),
-          layoutQualifier(TLayoutQualifier::create()),
-          primarySize(0),
-          secondarySize(0),
-          array(false),
-          arraySize(0),
-          interfaceBlock(nullptr),
-          structure(nullptr)
-    {
-    }
-    explicit TType(TBasicType t, unsigned char ps = 1, unsigned char ss = 1)
-        : type(t),
-          precision(EbpUndefined),
-          qualifier(EvqGlobal),
-          invariant(false),
-          memoryQualifier(TMemoryQualifier::create()),
-          layoutQualifier(TLayoutQualifier::create()),
-          primarySize(ps),
-          secondarySize(ss),
-          array(false),
-          arraySize(0),
-          interfaceBlock(0),
-          structure(0)
-    {
-    }
+    TType();
+    explicit TType(TBasicType t, unsigned char ps = 1, unsigned char ss = 1);
     TType(TBasicType t,
           TPrecision p,
           TQualifier q     = EvqTemporary,
           unsigned char ps = 1,
-          unsigned char ss = 1,
-          bool a           = false)
+          unsigned char ss = 1);
+    explicit TType(const TPublicType &p);
+    explicit TType(const TStructure *userDef);
+    TType(const TInterfaceBlock *interfaceBlockIn,
+          TQualifier qualifierIn,
+          TLayoutQualifier layoutQualifierIn);
+    TType(const TType &t);
+    TType &operator=(const TType &t);
+
+    constexpr TType(TBasicType t,
+                    TPrecision p,
+                    TQualifier q,
+                    unsigned char ps,
+                    unsigned char ss,
+                    const char *mangledName)
         : type(t),
           precision(p),
           qualifier(q),
           invariant(false),
-          memoryQualifier(TMemoryQualifier::create()),
-          layoutQualifier(TLayoutQualifier::create()),
+          memoryQualifier(TMemoryQualifier::Create()),
+          layoutQualifier(TLayoutQualifier::Create()),
           primarySize(ps),
           secondarySize(ss),
-          array(a),
-          arraySize(0),
-          interfaceBlock(0),
-          structure(0)
-    {
-    }
-    explicit TType(const TPublicType &p);
-    explicit TType(TStructure *userDef, TPrecision p = EbpUndefined)
-        : type(EbtStruct),
-          precision(p),
-          qualifier(EvqTemporary),
-          invariant(false),
-          memoryQualifier(TMemoryQualifier::create()),
-          layoutQualifier(TLayoutQualifier::create()),
-          primarySize(1),
-          secondarySize(1),
-          array(false),
-          arraySize(0),
-          interfaceBlock(0),
-          structure(userDef)
-    {
-    }
-    TType(TInterfaceBlock *interfaceBlockIn,
-          TQualifier qualifierIn,
-          TLayoutQualifier layoutQualifierIn,
-          int arraySizeIn)
-        : type(EbtInterfaceBlock),
-          precision(EbpUndefined),
-          qualifier(qualifierIn),
-          invariant(false),
-          memoryQualifier(TMemoryQualifier::create()),
-          layoutQualifier(layoutQualifierIn),
-          primarySize(1),
-          secondarySize(1),
-          array(arraySizeIn > 0),
-          arraySize(arraySizeIn),
-          interfaceBlock(interfaceBlockIn),
-          structure(0)
+          mArraySizes(nullptr),
+          mInterfaceBlock(nullptr),
+          mStructure(nullptr),
+          mIsStructSpecifier(false),
+          mMangledName(mangledName)
     {
     }
 
-    TType(const TType &) = default;
-    TType &operator=(const TType &) = default;
-
-    TBasicType getBasicType() const
+    constexpr TType(TType &&t)
+        : type(t.type),
+          precision(t.precision),
+          qualifier(t.qualifier),
+          invariant(t.invariant),
+          memoryQualifier(t.memoryQualifier),
+          layoutQualifier(t.layoutQualifier),
+          primarySize(t.primarySize),
+          secondarySize(t.secondarySize),
+          mArraySizes(t.mArraySizes),
+          mInterfaceBlock(t.mInterfaceBlock),
+          mStructure(t.mStructure),
+          mIsStructSpecifier(t.mIsStructSpecifier),
+          mMangledName(t.mMangledName)
     {
-        return type;
-    }
-    void setBasicType(TBasicType t)
-    {
-        if (type != t)
-        {
-            type = t;
-            invalidateMangledName();
-        }
-    }
-
-    TPrecision getPrecision() const
-    {
-        return precision;
-    }
-    void setPrecision(TPrecision p)
-    {
-        precision = p;
     }
 
-    TQualifier getQualifier() const
-    {
-        return qualifier;
-    }
-    void setQualifier(TQualifier q)
-    {
-        qualifier = q;
-    }
+    constexpr TBasicType getBasicType() const { return type; }
+    void setBasicType(TBasicType t);
 
-    bool isInvariant() const
-    {
-        return invariant;
-    }
+    TPrecision getPrecision() const { return precision; }
+    void setPrecision(TPrecision p) { precision = p; }
+
+    constexpr TQualifier getQualifier() const { return qualifier; }
+    void setQualifier(TQualifier q) { qualifier = q; }
+
+    bool isInvariant() const { return invariant; }
 
     void setInvariant(bool i) { invariant = i; }
 
     TMemoryQualifier getMemoryQualifier() const { return memoryQualifier; }
     void setMemoryQualifier(const TMemoryQualifier &mq) { memoryQualifier = mq; }
 
-    TLayoutQualifier getLayoutQualifier() const
-    {
-        return layoutQualifier;
-    }
-    void setLayoutQualifier(TLayoutQualifier lq)
-    {
-        layoutQualifier = lq;
-    }
+    TLayoutQualifier getLayoutQualifier() const { return layoutQualifier; }
+    void setLayoutQualifier(TLayoutQualifier lq) { layoutQualifier = lq; }
 
-    int getNominalSize() const
-    {
-        return primarySize;
-    }
-    int getSecondarySize() const
-    {
-        return secondarySize;
-    }
+    int getNominalSize() const { return primarySize; }
+    int getSecondarySize() const { return secondarySize; }
     int getCols() const
     {
         ASSERT(isMatrix());
@@ -385,136 +174,89 @@ class TType
         ASSERT(isMatrix());
         return secondarySize;
     }
-    void setPrimarySize(unsigned char ps)
-    {
-        if (primarySize != ps)
-        {
-            primarySize = ps;
-            invalidateMangledName();
-        }
-    }
-    void setSecondarySize(unsigned char ss)
-    {
-        if (secondarySize != ss)
-        {
-            secondarySize = ss;
-            invalidateMangledName();
-        }
-    }
+    void setPrimarySize(unsigned char ps);
+    void setSecondarySize(unsigned char ss);
 
     // Full size of single instance of type
     size_t getObjectSize() const;
 
-    bool isMatrix() const
-    {
-        return primarySize > 1 && secondarySize > 1;
-    }
-    bool isNonSquareMatrix() const
-    {
-        return isMatrix() && primarySize != secondarySize;
-    }
-    bool isArray() const
-    {
-        return array;
-    }
-    bool isUnsizedArray() const
-    {
-        return array && arraySize == 0u;
-    }
-    unsigned int getArraySize() const { return arraySize; }
-    void setArraySize(unsigned int s)
-    {
-        if (!array || arraySize != s)
-        {
-            array     = true;
-            arraySize = s;
-            invalidateMangledName();
-        }
-    }
-    void clearArrayness()
-    {
-        if (array)
-        {
-            array     = false;
-            arraySize = 0u;
-            invalidateMangledName();
-        }
-    }
+    // Get how many locations this type consumes as a uniform.
+    int getLocationCount() const;
 
-    TInterfaceBlock *getInterfaceBlock() const
-    {
-        return interfaceBlock;
+    bool isMatrix() const { return primarySize > 1 && secondarySize > 1; }
+    bool isNonSquareMatrix() const { return isMatrix() && primarySize != secondarySize; }
+    bool isArray() const { return mArraySizes != nullptr && !mArraySizes->empty(); }
+    bool isArrayOfArrays() const { return isArray() && mArraySizes->size() > 1u; }
+    size_t getNumArraySizes() const { return isArray() ? mArraySizes->size() : 0; }
+    const TVector<unsigned int> *getArraySizes() const { return mArraySizes; }
+    unsigned int getArraySizeProduct() const;
+    bool isUnsizedArray() const;
+    unsigned int getOutermostArraySize() const {
+         ASSERT(isArray());
+         return mArraySizes->back();
     }
-    void setInterfaceBlock(TInterfaceBlock *interfaceBlockIn)
-    {
-        if (interfaceBlock != interfaceBlockIn)
-        {
-            interfaceBlock = interfaceBlockIn;
-            invalidateMangledName();
-        }
-    }
-    bool isInterfaceBlock() const
-    {
-        return type == EbtInterfaceBlock;
-    }
+    void makeArray(unsigned int s);
 
-    bool isVector() const
-    {
-        return primarySize > 1 && secondarySize == 1;
-    }
+    // sizes contain new outermost array sizes.
+    void makeArrays(const TVector<unsigned int> &sizes);
+    // Here, the array dimension value 0 corresponds to the innermost array.
+    void setArraySize(size_t arrayDimension, unsigned int s);
+
+    // Will set unsized array sizes according to newArraySizes. In case there are more
+    // unsized arrays than there are sizes in newArraySizes, defaults to setting any
+    // remaining array sizes to 1.
+    void sizeUnsizedArrays(const TVector<unsigned int> *newArraySizes);
+
+    // Will size the outermost array according to arraySize.
+    void sizeOutermostUnsizedArray(unsigned int arraySize);
+
+    // Note that the array element type might still be an array type in GLSL ES version >= 3.10.
+    void toArrayElementType();
+
+    const TInterfaceBlock *getInterfaceBlock() const { return mInterfaceBlock; }
+    void setInterfaceBlock(const TInterfaceBlock *interfaceBlockIn);
+    bool isInterfaceBlock() const { return type == EbtInterfaceBlock; }
+
+    bool isVector() const { return primarySize > 1 && secondarySize == 1; }
     bool isScalar() const
     {
-        return primarySize == 1 && secondarySize == 1 && !structure;
+        return primarySize == 1 && secondarySize == 1 && !mStructure && !isArray();
     }
-    bool isScalarInt() const
-    {
-        return isScalar() && (type == EbtInt || type == EbtUInt);
-    }
+    bool isScalarFloat() const { return isScalar() && type == EbtFloat; }
+    bool isScalarInt() const { return isScalar() && (type == EbtInt || type == EbtUInt); }
 
-    TStructure *getStruct() const
+    bool canBeConstructed() const;
+
+    const TStructure *getStruct() const { return mStructure; }
+
+    static constexpr char GetSizeMangledName(unsigned char primarySize, unsigned char secondarySize)
     {
-        return structure;
-    }
-    void setStruct(TStructure *s)
-    {
-        if (structure != s)
+        unsigned int sizeKey = (secondarySize - 1u) * 4u + primarySize - 1u;
+        if (sizeKey < 10u)
         {
-            structure = s;
-            invalidateMangledName();
+            return static_cast<char>('0' + sizeKey);
         }
+        return static_cast<char>('A' + sizeKey - 10);
     }
+    const char *getMangledName() const;
 
-    const TString &getMangledName() const
-    {
-        if (mangled.empty())
-        {
-            mangled = buildMangledName();
-            mangled += ';';
-        }
+    bool sameNonArrayType(const TType &right) const;
 
-        return mangled;
-    }
+    // Returns true if arrayType is an array made of this type.
+    bool isElementTypeOf(const TType &arrayType) const;
 
-    bool sameElementType(const TType &right) const
-    {
-        return type == right.type &&
-            primarySize == right.primarySize &&
-            secondarySize == right.secondarySize &&
-            structure == right.structure;
-    }
     bool operator==(const TType &right) const
     {
-        return type == right.type &&
-            primarySize == right.primarySize &&
-            secondarySize == right.secondarySize &&
-            array == right.array && (!array || arraySize == right.arraySize) &&
-            structure == right.structure;
+        size_t numArraySizesL = getNumArraySizes();
+        size_t numArraySizesR = right.getNumArraySizes();
+        bool arraySizesEqual  = numArraySizesL == numArraySizesR &&
+                               (numArraySizesL == 0 || *mArraySizes == *right.mArraySizes);
+        return type == right.type && primarySize == right.primarySize &&
+               secondarySize == right.secondarySize && arraySizesEqual &&
+               mStructure == right.mStructure;
         // don't check the qualifier, it's not ever what's being sought after
     }
-    bool operator!=(const TType &right) const
-    {
-        return !operator==(right);
-    }
+    bool operator!=(const TType &right) const { return !operator==(right); }
     bool operator<(const TType &right) const
     {
         if (type != right.type)
@@ -523,29 +265,25 @@ class TType
             return primarySize < right.primarySize;
         if (secondarySize != right.secondarySize)
             return secondarySize < right.secondarySize;
-        if (array != right.array)
-            return array < right.array;
-        if (arraySize != right.arraySize)
-            return arraySize < right.arraySize;
-        if (structure != right.structure)
-            return structure < right.structure;
+        size_t numArraySizesL = getNumArraySizes();
+        size_t numArraySizesR = right.getNumArraySizes();
+        if (numArraySizesL != numArraySizesR)
+            return numArraySizesL < numArraySizesR;
+        for (size_t i = 0; i < numArraySizesL; ++i)
+        {
+            if ((*mArraySizes)[i] != (*right.mArraySizes)[i])
+                return (*mArraySizes)[i] < (*right.mArraySizes)[i];
+        }
+        if (mStructure != right.mStructure)
+            return mStructure < right.mStructure;
 
         return false;
     }
 
-    const char *getBasicString() const
-    {
-        return ::getBasicString(type);
-    }
+    const char *getBasicString() const { return sh::getBasicString(type); }
 
-    const char *getPrecisionString() const
-    {
-        return ::getPrecisionString(precision);
-    }
-    const char *getQualifierString() const
-    {
-        return ::getQualifierString(qualifier);
-    }
+    const char *getPrecisionString() const { return sh::getPrecisionString(precision); }
+    const char *getQualifierString() const { return sh::getQualifierString(qualifier); }
 
     const char *getBuiltInTypeNameString() const;
 
@@ -563,52 +301,36 @@ class TType
     // For type "nesting2", this method would return 2 -- the number
     // of structures through which indirection must occur to reach the
     // deepest field (nesting2.field1.position).
-    int getDeepestStructNesting() const
-    {
-        return structure ? structure->deepestNesting() : 0;
-    }
+    int getDeepestStructNesting() const;
 
-    bool isStructureContainingArrays() const
-    {
-        return structure ? structure->containsArrays() : false;
-    }
+    bool isNamelessStruct() const;
 
-    bool isStructureContainingType(TBasicType t) const
-    {
-        return structure ? structure->containsType(t) : false;
-    }
+    bool isStructureContainingArrays() const;
+    bool isStructureContainingMatrices() const;
+    bool isStructureContainingType(TBasicType t) const;
+    bool isStructureContainingSamplers() const;
 
-    bool isStructureContainingSamplers() const
-    {
-        return structure ? structure->containsSamplers() : false;
-    }
+    bool isStructSpecifier() const { return mIsStructSpecifier; }
 
-    bool isStructureContainingImages() const
-    {
-        return structure ? structure->containsImages() : false;
-    }
+    // Return true if variables of this type should be replaced with an inline constant value if
+    // such is available. False will be returned in cases where output doesn't support
+    // TIntermConstantUnion nodes of the type, or if the type contains a lot of fields and creating
+    // several copies of it in the output code is undesirable for performance.
+    bool canReplaceWithConstantUnion() const;
 
-    void createSamplerSymbols(const TString &structName,
-                              const TString &structAPIName,
-                              const unsigned int arrayOfStructsSize,
-                              TVector<TIntermSymbol *> *outputSymbols,
-                              TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames) const
-    {
-        ASSERT(structure != nullptr && structure->containsSamplers());
-        structure->createSamplerSymbols(structName, structAPIName, arrayOfStructsSize,
-                                        outputSymbols, outputSymbolsToAPINames);
-    }
+    // The char arrays passed in must be pool allocated or static.
+    void createSamplerSymbols(const ImmutableString &namePrefix,
+                              const TString &apiNamePrefix,
+                              TVector<const TVariable *> *outputSymbols,
+                              TMap<const TVariable *, TString> *outputSymbolsToAPINames,
+                              TSymbolTable *symbolTable) const;
 
     // Initializes all lazily-initialized members.
-    void realize()
-    {
-        getMangledName();
-    }
+    void realize();
 
   private:
-    void invalidateMangledName() { mangled = ""; }
-    TString buildMangledName() const;
-    size_t getStructSize() const;
+    void invalidateMangledName();
+    const char *buildMangledName() const;
 
     TBasicType type;
     TPrecision precision;
@@ -616,18 +338,24 @@ class TType
     bool invariant;
     TMemoryQualifier memoryQualifier;
     TLayoutQualifier layoutQualifier;
-    unsigned char primarySize; // size of vector or cols matrix
-    unsigned char secondarySize; // rows of a matrix
-    bool array;
-    unsigned int arraySize;
+    unsigned char primarySize;    // size of vector or cols matrix
+    unsigned char secondarySize;  // rows of a matrix
 
-    // 0 unless this is an interface block, or interface block member variable
-    TInterfaceBlock *interfaceBlock;
+    // Used to make an array type. Outermost array size is stored at the end of the vector. Having 0
+    // in this vector means an unsized array.
+    TVector<unsigned int> *mArraySizes;
 
-    // 0 unless this is a struct
-    TStructure *structure;
+    // This is set only in the following two cases:
+    // 1) Represents an interface block.
+    // 2) Represents the member variable of an unnamed interface block.
+    // It's nullptr also for members of named interface blocks.
+    const TInterfaceBlock *mInterfaceBlock;
 
-    mutable TString mangled;
+    // nullptr unless this is a struct
+    const TStructure *mStructure;
+    bool mIsStructSpecifier;
+
+    mutable const char *mMangledName;
 };
 
 // TTypeSpecifierNonArray stores all of the necessary fields for type_specifier_nonarray from the
@@ -635,28 +363,38 @@ class TType
 struct TTypeSpecifierNonArray
 {
     TBasicType type;
-    unsigned char primarySize;          // size of vector or cols of matrix
-    unsigned char secondarySize;        // rows of matrix
-    TType *userDef;
+    unsigned char primarySize;    // size of vector or cols of matrix
+    unsigned char secondarySize;  // rows of matrix
+    const TStructure *userDef;
     TSourceLoc line;
 
     // true if the type was defined by a struct specifier rather than a reference to a type name.
     bool isStructSpecifier;
 
-    void initialize(TBasicType bt, const TSourceLoc &ln)
+    void initialize(TBasicType aType, const TSourceLoc &aLine)
     {
-        type = bt;
-        primarySize = 1;
-        secondarySize = 1;
+        ASSERT(aType != EbtStruct);
+        type              = aType;
+        primarySize       = 1;
+        secondarySize     = 1;
         userDef           = nullptr;
-        line = ln;
+        line              = aLine;
         isStructSpecifier = false;
     }
 
-    void setAggregate(unsigned char size)
+    void initializeStruct(const TStructure *aUserDef,
+                          bool aIsStructSpecifier,
+                          const TSourceLoc &aLine)
     {
-        primarySize = size;
+        type              = EbtStruct;
+        primarySize       = 1;
+        secondarySize     = 1;
+        userDef           = aUserDef;
+        line              = aLine;
+        isStructSpecifier = aIsStructSpecifier;
     }
+
+    void setAggregate(unsigned char size) { primarySize = size; }
 
     void setMatrix(unsigned char columns, unsigned char rows)
     {
@@ -681,40 +419,11 @@ struct TTypeSpecifierNonArray
 //
 struct TPublicType
 {
-    TTypeSpecifierNonArray typeSpecifierNonArray;
-    TLayoutQualifier layoutQualifier;
-    TMemoryQualifier memoryQualifier;
-    TQualifier qualifier;
-    bool invariant;
-    TPrecision precision;
-    bool array;
-    int arraySize;
+    // Must have a trivial default constructor since it is used in YYSTYPE.
+    TPublicType() = default;
 
-    void initialize(const TTypeSpecifierNonArray &typeSpecifier, TQualifier q)
-    {
-        typeSpecifierNonArray = typeSpecifier;
-        layoutQualifier       = TLayoutQualifier::create();
-        memoryQualifier       = TMemoryQualifier::create();
-        qualifier             = q;
-        invariant             = false;
-        precision             = EbpUndefined;
-        array                 = false;
-        arraySize             = 0;
-    }
-
-    void initializeBasicType(TBasicType basicType)
-    {
-        typeSpecifierNonArray.type          = basicType;
-        typeSpecifierNonArray.primarySize   = 1;
-        typeSpecifierNonArray.secondarySize = 1;
-        layoutQualifier                     = TLayoutQualifier::create();
-        memoryQualifier                     = TMemoryQualifier::create();
-        qualifier                           = EvqTemporary;
-        invariant                           = false;
-        precision                           = EbpUndefined;
-        array                               = false;
-        arraySize                           = 0;
-    }
+    void initialize(const TTypeSpecifierNonArray &typeSpecifier, TQualifier q);
+    void initializeBasicType(TBasicType basicType);
 
     TBasicType getBasicType() const { return typeSpecifierNonArray.type; }
     void setBasicType(TBasicType basicType) { typeSpecifierNonArray.type = basicType; }
@@ -722,47 +431,31 @@ struct TPublicType
     unsigned char getPrimarySize() const { return typeSpecifierNonArray.primarySize; }
     unsigned char getSecondarySize() const { return typeSpecifierNonArray.secondarySize; }
 
-    const TType *getUserDef() const { return typeSpecifierNonArray.userDef; }
+    const TStructure *getUserDef() const { return typeSpecifierNonArray.userDef; }
     const TSourceLoc &getLine() const { return typeSpecifierNonArray.line; }
 
     bool isStructSpecifier() const { return typeSpecifierNonArray.isStructSpecifier; }
 
-    bool isStructureContainingArrays() const
-    {
-        if (!typeSpecifierNonArray.userDef)
-        {
-            return false;
-        }
+    bool isStructureContainingArrays() const;
+    bool isStructureContainingType(TBasicType t) const;
+    void setArraySizes(TVector<unsigned int> *sizes);
+    bool isArray() const;
+    void clearArrayness();
+    bool isAggregate() const;
 
-        return typeSpecifierNonArray.userDef->isStructureContainingArrays();
-    }
+    TTypeSpecifierNonArray typeSpecifierNonArray;
+    TLayoutQualifier layoutQualifier;
+    TMemoryQualifier memoryQualifier;
+    TQualifier qualifier;
+    bool invariant;
+    TPrecision precision;
 
-    bool isStructureContainingType(TBasicType t) const
-    {
-        if (!typeSpecifierNonArray.userDef)
-        {
-            return false;
-        }
-
-        return typeSpecifierNonArray.userDef->isStructureContainingType(t);
-    }
-
-    bool isUnsizedArray() const { return array && arraySize == 0; }
-    void setArraySize(int s)
-    {
-        array     = true;
-        arraySize = s;
-    }
-    void clearArrayness()
-    {
-        array     = false;
-        arraySize = 0;
-    }
-
-    bool isAggregate() const
-    {
-        return array || typeSpecifierNonArray.isMatrix() || typeSpecifierNonArray.isVector();
-    }
+    // Either nullptr or empty in case the type is not an array. The last element is the outermost
+    // array size. Note that due to bison restrictions, copies of the public type created by the
+    // copy constructor share the same arraySizes pointer.
+    const TVector<unsigned int> *arraySizes;
 };
 
-#endif // COMPILER_TRANSLATOR_TYPES_H_
+}  // namespace sh
+
+#endif  // COMPILER_TRANSLATOR_TYPES_H_

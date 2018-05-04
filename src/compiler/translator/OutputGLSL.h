@@ -9,14 +9,18 @@
 
 #include "compiler/translator/OutputGLSLBase.h"
 
+namespace sh
+{
+
 class TOutputGLSL : public TOutputGLSLBase
 {
   public:
-    TOutputGLSL(TInfoSinkBase& objSink,
+    TOutputGLSL(TInfoSinkBase &objSink,
                 ShArrayIndexClampingStrategy clampingStrategy,
                 ShHashFunction64 hashFunction,
-                NameMap& nameMap,
-                TSymbolTable& symbolTable,
+                NameMap &nameMap,
+                TSymbolTable *symbolTable,
+                sh::GLenum shaderType,
                 int shaderVersion,
                 ShShaderOutput output,
                 ShCompileOptions compileOptions);
@@ -24,7 +28,9 @@ class TOutputGLSL : public TOutputGLSLBase
   protected:
     bool writeVariablePrecision(TPrecision) override;
     void visitSymbol(TIntermSymbol *node) override;
-    TString translateTextureFunction(TString &name) override;
+    ImmutableString translateTextureFunction(const ImmutableString &name) override;
 };
+
+}  // namespace sh
 
 #endif  // COMPILER_TRANSLATOR_OUTPUTGLSL_H_

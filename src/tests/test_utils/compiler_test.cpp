@@ -10,50 +10,44 @@
 
 #include "angle_gl.h"
 #include "compiler/translator/Compiler.h"
+#include "compiler/translator/FunctionLookup.h"
+#include "compiler/translator/tree_util/IntermTraverse.h"
+
+namespace sh
+{
 
 namespace
 {
 
-class ShaderVariableFinder : public TIntermTraverser
+ImmutableString GetSymbolTableMangledName(TIntermAggregate *node)
 {
-  public:
-    ShaderVariableFinder(const TString &variableName, TBasicType basicType)
-        : TIntermTraverser(true, false, false),
-          mVariableName(variableName),
-          mNodeFound(nullptr),
-          mBasicType(basicType)
+    ASSERT(!node->isConstructor());
+    switch (node->getOp())
     {
+        case EOpCallInternalRawFunction:
+        case EOpCallBuiltInFunction:
+        case EOpCallFunctionInAST:
+            return TFunctionLookup::GetMangledName(node->getFunction()->name().data(),
+                                                   *node->getSequence());
+        default:
+            const char *opString = GetOperatorString(node->getOp());
+            return TFunctionLookup::GetMangledName(opString, *node->getSequence());
     }
-
-    void visitSymbol(TIntermSymbol *node)
-    {
-        if (node->getBasicType() == mBasicType && node->getSymbol() == mVariableName)
-        {
-            mNodeFound = node;
-        }
-    }
-
-    bool isFound() const { return mNodeFound != nullptr; }
-    const TIntermSymbol *getNode() const { return mNodeFound; }
-
-  private:
-    TString mVariableName;
-    TIntermSymbol *mNodeFound;
-    TBasicType mBasicType;
-};
+}
 
 class FunctionCallFinder : public TIntermTraverser
 {
   public:
-    FunctionCallFinder(const TString &functionName)
-        : TIntermTraverser(true, false, false), mFunctionName(functionName), mNodeFound(nullptr)
+    FunctionCallFinder(const char *functionMangledName)
+        : TIntermTraverser(true, false, false),
+          mFunctionMangledName(functionMangledName),
+          mNodeFound(nullptr)
     {
     }
 
     bool visitAggregate(Visit visit, TIntermAggregate *node) override
     {
-        if (node->getOp() == EOpFunctionCall &&
-            node->getFunctionSymbolInfo()->getName() == mFunctionName)
+        if (node->isFunctionCall() && GetSymbolTableMangledName(node) == mFunctionMangledName)
         {
             mNodeFound = node;
             return false;
@@ -65,7 +59,7 @@ class FunctionCallFinder : public TIntermTraverser
     const TIntermAggregate *getNode() const { return mNodeFound; }
 
   private:
-    TString mFunctionName;
+    const char *mFunctionMangledName;
     TIntermAggregate *mNodeFound;
 };
 
@@ -80,7 +74,7 @@ bool compileTestShader(GLenum type,
                        std::string *translatedCode,
                        std::string *infoLog)
 {
-    TCompiler *translator = ConstructCompiler(type, spec, output);
+    sh::TCompiler *translator = sh::ConstructCompiler(type, spec, output);
     if (!translator->Init(*resources))
     {
         SafeDelete(translator);
@@ -108,7 +102,7 @@ bool compileTestShader(GLenum type,
                        std::string *infoLog)
 {
     ShBuiltInResources resources;
-    ShInitBuiltInResources(&resources);
+    sh::InitBuiltInResources(&resources);
     return compileTestShader(type, spec, output, shaderString, &resources, compileOptions, translatedCode, infoLog);
 }
 
@@ -117,7 +111,7 @@ MatchOutputCodeTest::MatchOutputCodeTest(GLenum shaderType,
                                          ShShaderOutput outputType)
     : mShaderType(shaderType), mDefaultCompileOptions(defaultCompileOptions)
 {
-    ShInitBuiltInResources(&mResources);
+    sh::InitBuiltInResources(&mResources);
     mOutputCode[outputType] = std::string();
 }
 
@@ -157,7 +151,7 @@ bool MatchOutputCodeTest::compileWithSettings(ShShaderOutput output,
                                               std::string *translatedCode,
                                               std::string *infoLog)
 {
-    return compileTestShader(mShaderType, SH_GLES3_SPEC, output, shaderString, &mResources,
+    return compileTestShader(mShaderType, SH_GLES3_1_SPEC, output, shaderString, &mResources,
                              compileOptions, translatedCode, infoLog);
 }
 
@@ -167,10 +161,32 @@ bool MatchOutputCodeTest::foundInCode(ShShaderOutput output, const char *stringT
     EXPECT_NE(mOutputCode.end(), code);
     if (code == mOutputCode.end())
     {
+        return std::string::npos;
+    }
+    return code->second.find(stringToFind) != std::string::npos;
+}
+
+bool MatchOutputCodeTest::foundInCodeInOrder(ShShaderOutput output,
+                                             std::vector<const char *> stringsToFind)
+{
+    const auto code = mOutputCode.find(output);
+    EXPECT_NE(mOutputCode.end(), code);
+    if (code == mOutputCode.end())
+    {
         return false;
     }
 
-    return code->second.find(stringToFind) != std::string::npos;
+    size_t currentPos = 0;
+    for (const char *stringToFind : stringsToFind)
+    {
+        auto position = code->second.find(stringToFind, currentPos);
+        if (position == std::string::npos)
+        {
+            return false;
+        }
+        currentPos = position + strlen(stringToFind);
+    }
+    return true;
 }
 
 bool MatchOutputCodeTest::foundInCode(ShShaderOutput output,
@@ -186,6 +202,9 @@ bool MatchOutputCodeTest::foundInCode(ShShaderOutput output,
 
     size_t currentPos  = 0;
     int occurencesLeft = expectedOccurrences;
+
+    const size_t searchStringLength = strlen(stringToFind);
+
     while (occurencesLeft-- > 0)
     {
         auto position = code->second.find(stringToFind, currentPos);
@@ -193,8 +212,10 @@ bool MatchOutputCodeTest::foundInCode(ShShaderOutput output,
         {
             return false;
         }
-        currentPos = position + 1;
+        // Search strings should not overlap.
+        currentPos = position + searchStringLength;
     }
+    // Make sure that there aren't extra occurrences.
     return code->second.find(stringToFind, currentPos) == std::string::npos;
 }
 
@@ -222,6 +243,18 @@ bool MatchOutputCodeTest::foundInCode(const char *stringToFind, const int expect
     return true;
 }
 
+bool MatchOutputCodeTest::foundInCodeInOrder(std::vector<const char *> stringsToFind)
+{
+    for (auto &code : mOutputCode)
+    {
+        if (!foundInCodeInOrder(code.first, stringsToFind))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool MatchOutputCodeTest::notFoundInCode(const char *stringToFind) const
 {
     for (auto &code : mOutputCode)
@@ -234,18 +267,11 @@ bool MatchOutputCodeTest::notFoundInCode(const char *stringToFind) const
     return true;
 }
 
-const TIntermSymbol *FindSymbolNode(TIntermNode *root,
-                                    const TString &symbolName,
-                                    TBasicType basicType)
+const TIntermAggregate *FindFunctionCallNode(TIntermNode *root, const TString &functionMangledName)
 {
-    ShaderVariableFinder finder(symbolName, basicType);
+    FunctionCallFinder finder(functionMangledName.c_str());
     root->traverse(&finder);
     return finder.getNode();
 }
 
-const TIntermAggregate *FindFunctionCallNode(TIntermNode *root, const TString &functionName)
-{
-    FunctionCallFinder finder(functionName);
-    root->traverse(&finder);
-    return finder.getNode();
-}
+}  // namespace sh

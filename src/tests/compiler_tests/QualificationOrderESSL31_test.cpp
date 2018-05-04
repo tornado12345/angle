@@ -13,43 +13,22 @@
 #include "compiler/translator/TranslatorESSL.h"
 #include "GLSLANG/ShaderLang.h"
 #include "tests/test_utils/compiler_test.h"
+#include "tests/test_utils/ShaderCompileTreeTest.h"
 
-class QualificationVertexShaderTestESSL31 : public testing::Test
+using namespace sh;
+
+class QualificationVertexShaderTestESSL31 : public ShaderCompileTreeTest
 {
   public:
     QualificationVertexShaderTestESSL31() {}
   protected:
-    virtual void SetUp()
+    ::GLenum getShaderType() const override { return GL_VERTEX_SHADER; }
+    ShShaderSpec getShaderSpec() const override { return SH_GLES3_1_SPEC; }
+
+    const TIntermSymbol *findSymbolInAST(const ImmutableString &symbolName)
     {
-        ShBuiltInResources resources;
-        ShInitBuiltInResources(&resources);
-
-        mTranslator = new TranslatorESSL(GL_VERTEX_SHADER, SH_GLES3_1_SPEC);
-        ASSERT_TRUE(mTranslator->Init(resources));
+        return FindSymbolNode(mASTRoot, symbolName);
     }
-
-    virtual void TearDown() { delete mTranslator; }
-
-    // Return true when compilation succeeds
-    bool compile(const std::string &shaderString)
-    {
-        const char *shaderStrings[] = {shaderString.c_str()};
-        mASTRoot                    = mTranslator->compileTreeForTesting(shaderStrings, 1,
-                                                      SH_INTERMEDIATE_TREE | SH_VARIABLES);
-        TInfoSink &infoSink = mTranslator->getInfoSink();
-        mInfoLog            = infoSink.info.c_str();
-        return mASTRoot != nullptr;
-    }
-
-    const TIntermSymbol *findSymbolInAST(const TString &symbolName, TBasicType basicType)
-    {
-        return FindSymbolNode(mASTRoot, symbolName, basicType);
-    }
-
-  protected:
-    TranslatorESSL *mTranslator;
-    TIntermNode *mASTRoot;
-    std::string mInfoLog;
 };
 
 // GLSL ES 3.10 has relaxed checks on qualifier order. Any order is correct.
@@ -68,7 +47,7 @@ TEST_F(QualificationVertexShaderTestESSL31, CentroidOut)
     }
     else
     {
-        const TIntermSymbol *node = findSymbolInAST("something", EbtFloat);
+        const TIntermSymbol *node = findSymbolInAST(ImmutableString("something"));
         ASSERT_NE(nullptr, node);
 
         const TType &type = node->getType();
@@ -91,7 +70,7 @@ TEST_F(QualificationVertexShaderTestESSL31, AllQualifiersMixed)
     }
     else
     {
-        const TIntermSymbol *node = findSymbolInAST("something", EbtFloat);
+        const TIntermSymbol *node = findSymbolInAST(ImmutableString("something"));
         ASSERT_NE(nullptr, node);
 
         const TType &type = node->getType();
@@ -116,7 +95,7 @@ TEST_F(QualificationVertexShaderTestESSL31, MultipleLayouts)
     }
     else
     {
-        const TIntermSymbol *node = findSymbolInAST("something", EbtFloat);
+        const TIntermSymbol *node = findSymbolInAST(ImmutableString("something"));
         ASSERT_NE(nullptr, node);
 
         const TType &type = node->getType();
@@ -143,7 +122,7 @@ TEST_F(QualificationVertexShaderTestESSL31, MultipleLayoutsInterfaceBlock)
     }
     else
     {
-        const TIntermSymbol *node = findSymbolInAST("MyInterfaceName", EbtInterfaceBlock);
+        const TIntermSymbol *node = findSymbolInAST(ImmutableString("MyInterfaceName"));
         ASSERT_NE(nullptr, node);
 
         const TType &type                = node->getType();
@@ -171,7 +150,7 @@ TEST_F(QualificationVertexShaderTestESSL31, MultipleLayoutsInterfaceBlock2)
     }
     else
     {
-        const TIntermSymbol *node = findSymbolInAST("MyInterfaceName", EbtInterfaceBlock);
+        const TIntermSymbol *node = findSymbolInAST(ImmutableString("MyInterfaceName"));
         ASSERT_NE(nullptr, node);
 
         const TType &type                = node->getType();

@@ -17,15 +17,15 @@
 namespace rx
 {
 
-DeviceD3D::DeviceD3D()
-    : mDevice(0), mDeviceType(0), mDeviceExternallySourced(false), mIsInitialized(false)
+DeviceD3D::DeviceD3D(GLint deviceType, void *nativeDevice)
+    : mDevice(nativeDevice), mDeviceType(deviceType), mIsInitialized(false)
 {
 }
 
 DeviceD3D::~DeviceD3D()
 {
 #if defined(ANGLE_ENABLE_D3D11)
-    if (mDeviceType == EGL_D3D11_DEVICE_ANGLE)
+    if (mIsInitialized && mDeviceType == EGL_D3D11_DEVICE_ANGLE)
     {
         // DeviceD3D holds a ref to an externally-sourced D3D11 device. We must release it.
         ID3D11Device *device = reinterpret_cast<ID3D11Device *>(mDevice);
@@ -36,57 +36,38 @@ DeviceD3D::~DeviceD3D()
 
 egl::Error DeviceD3D::getDevice(void **outValue)
 {
-    if (!mIsInitialized)
-    {
-        *outValue = nullptr;
-        return egl::Error(EGL_BAD_DEVICE_EXT);
-    }
-
+    ASSERT(mIsInitialized);
     *outValue = mDevice;
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
-egl::Error DeviceD3D::initialize(void *device,
-                                 EGLint deviceType,
-                                 EGLBoolean deviceExternallySourced)
+egl::Error DeviceD3D::initialize()
 {
     ASSERT(!mIsInitialized);
-    if (mIsInitialized)
-    {
-        return egl::Error(EGL_BAD_DEVICE_EXT);
-    }
-
-    mDevice                  = device;
-    mDeviceType              = deviceType;
-    mDeviceExternallySourced = !!deviceExternallySourced;
 
 #if defined(ANGLE_ENABLE_D3D11)
     if (mDeviceType == EGL_D3D11_DEVICE_ANGLE)
     {
         // Validate the device
-        IUnknown *iunknown = reinterpret_cast<IUnknown *>(device);
+        IUnknown *iunknown = reinterpret_cast<IUnknown *>(mDevice);
 
         ID3D11Device *d3dDevice = nullptr;
         HRESULT hr =
             iunknown->QueryInterface(__uuidof(ID3D11Device), reinterpret_cast<void **>(&d3dDevice));
         if (FAILED(hr))
         {
-            return egl::Error(EGL_BAD_ATTRIBUTE, "Invalid D3D device passed into EGLDeviceEXT");
+            return egl::EglBadAttribute() << "Invalid D3D device passed into EGLDeviceEXT";
         }
 
         // The QI to ID3D11Device adds a ref to the D3D11 device.
         // Deliberately don't release the ref here, so that the DeviceD3D holds a ref to the
         // D3D11 device.
     }
-    else
 #endif
-    {
-        ASSERT(!mDeviceExternallySourced);
-    }
 
     mIsInitialized = true;
 
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 EGLint DeviceD3D::getType()

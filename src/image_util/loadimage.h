@@ -551,6 +551,46 @@ void LoadEACRG11SToRG8(size_t width,
                        size_t outputRowPitch,
                        size_t outputDepthPitch);
 
+void LoadEACR11ToR16(size_t width,
+                     size_t height,
+                     size_t depth,
+                     const uint8_t *input,
+                     size_t inputRowPitch,
+                     size_t inputDepthPitch,
+                     uint8_t *output,
+                     size_t outputRowPitch,
+                     size_t outputDepthPitch);
+
+void LoadEACR11SToR16(size_t width,
+                      size_t height,
+                      size_t depth,
+                      const uint8_t *input,
+                      size_t inputRowPitch,
+                      size_t inputDepthPitch,
+                      uint8_t *output,
+                      size_t outputRowPitch,
+                      size_t outputDepthPitch);
+
+void LoadEACRG11ToRG16(size_t width,
+                       size_t height,
+                       size_t depth,
+                       const uint8_t *input,
+                       size_t inputRowPitch,
+                       size_t inputDepthPitch,
+                       uint8_t *output,
+                       size_t outputRowPitch,
+                       size_t outputDepthPitch);
+
+void LoadEACRG11SToRG16(size_t width,
+                        size_t height,
+                        size_t depth,
+                        const uint8_t *input,
+                        size_t inputRowPitch,
+                        size_t inputDepthPitch,
+                        uint8_t *output,
+                        size_t outputRowPitch,
+                        size_t outputDepthPitch);
+
 void LoadETC2RGB8ToRGBA8(size_t width,
                          size_t height,
                          size_t depth,
@@ -560,6 +600,16 @@ void LoadETC2RGB8ToRGBA8(size_t width,
                          uint8_t *output,
                          size_t outputRowPitch,
                          size_t outputDepthPitch);
+
+void LoadETC2RGB8ToBC1(size_t width,
+                       size_t height,
+                       size_t depth,
+                       const uint8_t *input,
+                       size_t inputRowPitch,
+                       size_t inputDepthPitch,
+                       uint8_t *output,
+                       size_t outputRowPitch,
+                       size_t outputDepthPitch);
 
 void LoadETC2SRGB8ToRGBA8(size_t width,
                           size_t height,
@@ -571,6 +621,16 @@ void LoadETC2SRGB8ToRGBA8(size_t width,
                           size_t outputRowPitch,
                           size_t outputDepthPitch);
 
+void LoadETC2SRGB8ToBC1(size_t width,
+                        size_t height,
+                        size_t depth,
+                        const uint8_t *input,
+                        size_t inputRowPitch,
+                        size_t inputDepthPitch,
+                        uint8_t *output,
+                        size_t outputRowPitch,
+                        size_t outputDepthPitch);
+
 void LoadETC2RGB8A1ToRGBA8(size_t width,
                            size_t height,
                            size_t depth,
@@ -581,6 +641,16 @@ void LoadETC2RGB8A1ToRGBA8(size_t width,
                            size_t outputRowPitch,
                            size_t outputDepthPitch);
 
+void LoadETC2RGB8A1ToBC1(size_t width,
+                         size_t height,
+                         size_t depth,
+                         const uint8_t *input,
+                         size_t inputRowPitch,
+                         size_t inputDepthPitch,
+                         uint8_t *output,
+                         size_t outputRowPitch,
+                         size_t outputDepthPitch);
+
 void LoadETC2SRGB8A1ToRGBA8(size_t width,
                             size_t height,
                             size_t depth,
@@ -590,6 +660,16 @@ void LoadETC2SRGB8A1ToRGBA8(size_t width,
                             uint8_t *output,
                             size_t outputRowPitch,
                             size_t outputDepthPitch);
+
+void LoadETC2SRGB8A1ToBC1(size_t width,
+                          size_t height,
+                          size_t depth,
+                          const uint8_t *input,
+                          size_t inputRowPitch,
+                          size_t inputDepthPitch,
+                          uint8_t *output,
+                          size_t outputRowPitch,
+                          size_t outputDepthPitch);
 
 void LoadETC2RGBA8ToRGBA8(size_t width,
                           size_t height,

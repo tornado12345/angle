@@ -8,6 +8,8 @@
 
 #include "libANGLE/renderer/gl/SurfaceGL.h"
 
+#include "libANGLE/Surface.h"
+#include "libANGLE/renderer/gl/BlitGL.h"
 #include "libANGLE/renderer/gl/FramebufferGL.h"
 #include "libANGLE/renderer/gl/RendererGL.h"
 
@@ -26,17 +28,27 @@ SurfaceGL::~SurfaceGL()
 FramebufferImpl *SurfaceGL::createDefaultFramebuffer(const gl::FramebufferState &data)
 {
     return new FramebufferGL(data, mRenderer->getFunctions(), mRenderer->getStateManager(),
-                             mRenderer->getWorkarounds(), mRenderer->getBlitter(), true);
+                             mRenderer->getWorkarounds(), mRenderer->getBlitter(),
+                             mRenderer->getMultiviewClearer(), true);
 }
 
 egl::Error SurfaceGL::getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc)
 {
     UNREACHABLE();
-    return egl::Error(EGL_BAD_SURFACE);
+    return egl::EglBadSurface();
 }
 
 egl::Error SurfaceGL::unMakeCurrent()
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
+
+gl::Error SurfaceGL::initializeContents(const gl::Context *context,
+                                        const gl::ImageIndex &imageIndex)
+{
+    FramebufferGL *framebufferGL = GetImplAs<FramebufferGL>(mState.defaultFramebuffer);
+    ANGLE_TRY(mRenderer->getBlitter()->clearFramebuffer(framebufferGL));
+    return gl::NoError();
 }
+
+}  // namespace rx
