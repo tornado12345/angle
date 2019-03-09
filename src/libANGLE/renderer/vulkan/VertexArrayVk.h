@@ -14,121 +14,118 @@
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 #include "libANGLE/renderer/vulkan/vk_helpers.h"
 
-namespace gl
-{
-class DrawCallParams;
-}  // namespace gl
-
 namespace rx
 {
 class BufferVk;
 
-namespace vk
-{
-class CommandGraphResource;
-class DynamicBuffer;
-}  // namespace vk
-
 class VertexArrayVk : public VertexArrayImpl
 {
   public:
-    VertexArrayVk(const gl::VertexArrayState &state);
+    VertexArrayVk(ContextVk *contextVk, const gl::VertexArrayState &state);
     ~VertexArrayVk() override;
 
     void destroy(const gl::Context *context) override;
 
-    gl::Error syncState(const gl::Context *context,
-                        const gl::VertexArray::DirtyBits &dirtyBits,
-                        const gl::VertexArray::DirtyAttribBitsArray &attribBits,
-                        const gl::VertexArray::DirtyBindingBitsArray &bindingBits) override;
+    angle::Result syncState(const gl::Context *context,
+                            const gl::VertexArray::DirtyBits &dirtyBits,
+                            gl::VertexArray::DirtyAttribBitsArray *attribBits,
+                            gl::VertexArray::DirtyBindingBitsArray *bindingBits) override;
 
-    const gl::AttribArray<VkBuffer> &getCurrentArrayBufferHandles() const;
-    const gl::AttribArray<VkDeviceSize> &getCurrentArrayBufferOffsets() const;
+    void updateDefaultAttrib(ContextVk *contextVk,
+                             size_t attribIndex,
+                             VkBuffer bufferHandle,
+                             uint32_t offset);
 
-    void updateDrawDependencies(vk::CommandGraphNode *readingNode,
-                                const gl::AttributesMask &activeAttribsMask,
-                                vk::CommandGraphResource *elementArrayBufferOverride,
-                                Serial serial,
-                                bool isDrawElements);
+    angle::Result updateClientAttribs(const gl::Context *context,
+                                      GLint firstVertex,
+                                      GLsizei vertexOrIndexCount,
+                                      GLsizei instanceCount,
+                                      gl::DrawElementsType indexTypeOrInvalid,
+                                      const void *indices);
 
-    void getPackedInputDescriptions(vk::PipelineDesc *pipelineDesc);
+    angle::Result handleLineLoop(ContextVk *contextVk,
+                                 GLint firstVertex,
+                                 GLsizei vertexOrIndexCount,
+                                 gl::DrawElementsType indexTypeOrInvalid,
+                                 const void *indices);
 
-    // Draw call handling.
-    gl::Error drawArrays(const gl::Context *context,
-                         RendererVk *renderer,
-                         const gl::DrawCallParams &drawCallParams,
-                         vk::CommandGraphNode *drawNode,
-                         bool newCommandBuffer);
-    gl::Error drawElements(const gl::Context *context,
-                           RendererVk *renderer,
-                           const gl::DrawCallParams &drawCallParams,
-                           vk::CommandGraphNode *drawNode,
-                           bool newCommandBuffer);
+    const gl::AttribArray<VkBuffer> &getCurrentArrayBufferHandles() const
+    {
+        return mCurrentArrayBufferHandles;
+    }
+
+    const gl::AttribArray<VkDeviceSize> &getCurrentArrayBufferOffsets() const
+    {
+        return mCurrentArrayBufferOffsets;
+    }
+
+    const gl::AttribArray<vk::BufferHelper *> &getCurrentArrayBuffers() const
+    {
+        return mCurrentArrayBuffers;
+    }
+
+    VkDeviceSize getCurrentElementArrayBufferOffset() const
+    {
+        return mCurrentElementArrayBufferOffset;
+    }
+
+    void updateCurrentElementArrayBufferOffset(const GLvoid *offset)
+    {
+        mCurrentElementArrayBufferOffset = reinterpret_cast<VkDeviceSize>(offset);
+    }
+
+    vk::BufferHelper *getCurrentElementArrayBuffer() const { return mCurrentElementArrayBuffer; }
+
+    angle::Result updateIndexTranslation(ContextVk *contextVk,
+                                         GLsizei indexCount,
+                                         gl::DrawElementsType type,
+                                         const void *indices);
 
   private:
-    // This will update any dirty packed input descriptions, regardless if they're used by the
-    // active program. This could lead to slight inefficiencies when the app would repeatedly
-    // update vertex info for attributes the program doesn't use, (very silly edge case). The
-    // advantage is the cached state then doesn't depend on the Program, so doesn't have to be
-    // updated when the active Program changes.
-    void updatePackedInputDescriptions();
-    void updatePackedInputInfo(uint32_t attribIndex,
-                               const gl::VertexBinding &binding,
-                               const gl::VertexAttribute &attrib);
+    void setDefaultPackedInput(ContextVk *contextVk, size_t attribIndex);
 
-    void updateArrayBufferReadDependencies(vk::CommandGraphNode *drawNode,
-                                           const gl::AttributesMask &activeAttribsMask,
-                                           Serial serial);
+    angle::Result streamIndexData(ContextVk *contextVk,
+                                  gl::DrawElementsType indexType,
+                                  size_t indexCount,
+                                  const void *sourcePointer,
+                                  vk::DynamicBuffer *dynamicBuffer);
+    angle::Result convertVertexBufferGpu(ContextVk *contextVk,
+                                         BufferVk *srcBuffer,
+                                         const gl::VertexBinding &binding,
+                                         size_t attribIndex,
+                                         const vk::Format &vertexFormat);
+    angle::Result convertVertexBufferCpu(ContextVk *contextVk,
+                                         BufferVk *srcBuffer,
+                                         const gl::VertexBinding &binding,
+                                         size_t attribIndex,
+                                         const vk::Format &vertexFormat);
+    void ensureConversionReleased(RendererVk *renderer, size_t attribIndex);
 
-    void updateElementArrayBufferReadDependency(vk::CommandGraphNode *drawNode, Serial serial);
-
-    gl::Error streamVertexData(RendererVk *renderer,
-                               const gl::AttributesMask &attribsToStream,
-                               const gl::DrawCallParams &drawCallParams);
-
-    gl::Error streamIndexData(RendererVk *renderer, const gl::DrawCallParams &drawCallParams);
-
-    gl::Error onDraw(const gl::Context *context,
-                     RendererVk *renderer,
-                     const gl::DrawCallParams &drawCallParams,
-                     vk::CommandGraphNode *drawNode,
-                     bool newCommandBuffer);
-    gl::Error onIndexedDraw(const gl::Context *context,
-                            RendererVk *renderer,
-                            const gl::DrawCallParams &drawCallParams,
-                            vk::CommandGraphNode *drawNode,
-                            bool newCommandBuffer);
-
-    void syncDirtyAttrib(const gl::VertexAttribute &attrib,
-                         const gl::VertexBinding &binding,
-                         size_t attribIndex);
+    angle::Result syncDirtyAttrib(ContextVk *contextVk,
+                                  const gl::VertexAttribute &attrib,
+                                  const gl::VertexBinding &binding,
+                                  size_t attribIndex);
 
     gl::AttribArray<VkBuffer> mCurrentArrayBufferHandles;
     gl::AttribArray<VkDeviceSize> mCurrentArrayBufferOffsets;
-    gl::AttribArray<vk::CommandGraphResource *> mCurrentArrayBufferResources;
-    VkBuffer mCurrentElementArrayBufferHandle;
+    gl::AttribArray<vk::BufferHelper *> mCurrentArrayBuffers;
+    gl::AttribArray<vk::DynamicBuffer> mCurrentArrayBufferConversion;
+    gl::AttribArray<bool> mCurrentArrayBufferConversionCanRelease;
     VkDeviceSize mCurrentElementArrayBufferOffset;
-    vk::CommandGraphResource *mCurrentElementArrayBufferResource;
-
-    // Keep a cache of binding and attribute descriptions for easy pipeline updates.
-    // This is copied out of here into the pipeline description on a Context state change.
-    gl::AttributesMask mDirtyPackedInputs;
-    vk::VertexInputBindings mPackedInputBindings;
-    vk::VertexInputAttributes mPackedInputAttributes;
+    vk::BufferHelper *mCurrentElementArrayBuffer;
 
     vk::DynamicBuffer mDynamicVertexData;
     vk::DynamicBuffer mDynamicIndexData;
+    vk::DynamicBuffer mTranslatedByteIndexData;
 
     vk::LineLoopHelper mLineLoopHelper;
-    Optional<int> mLineLoopBufferFirstIndex;
-    Optional<int> mLineLoopBufferLastIndex;
+    Optional<GLint> mLineLoopBufferFirstIndex;
+    Optional<size_t> mLineLoopBufferLastIndex;
     bool mDirtyLineLoopTranslation;
 
-    // Cache variable for determining whether or not to store new dependencies in the node.
-    bool mVertexBuffersDirty;
-    bool mIndexBufferDirty;
+    // Vulkan does not allow binding a null vertex buffer. We use a dummy as a placeholder.
+    vk::BufferHelper mTheNullBuffer;
 };
-
 }  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_VULKAN_VERTEXARRAYVK_H_

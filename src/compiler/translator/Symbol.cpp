@@ -7,7 +7,7 @@
 //
 
 #if defined(_MSC_VER)
-#pragma warning(disable : 4718)
+#    pragma warning(disable : 4718)
 #endif
 
 #include "compiler/translator/Symbol.h"
@@ -25,6 +25,7 @@ constexpr const ImmutableString kMainName("main");
 constexpr const ImmutableString kImageLoadName("imageLoad");
 constexpr const ImmutableString kImageStoreName("imageStore");
 constexpr const ImmutableString kImageSizeName("imageSize");
+constexpr const ImmutableString kAtomicCounterName("atomicCounter");
 
 static const char kFunctionMangledNameSeparator = '(';
 
@@ -33,11 +34,13 @@ static const char kFunctionMangledNameSeparator = '(';
 TSymbol::TSymbol(TSymbolTable *symbolTable,
                  const ImmutableString &name,
                  SymbolType symbolType,
+                 SymbolClass symbolClass,
                  TExtension extension)
     : mName(name),
       mUniqueId(symbolTable->nextUniqueId()),
       mSymbolType(symbolType),
-      mExtension(extension)
+      mExtension(extension),
+      mSymbolClass(symbolClass)
 {
     ASSERT(mSymbolType == SymbolType::BuiltIn || mExtension == TExtension::UNDEFINED);
     ASSERT(mName != "" || mSymbolType == SymbolType::AngleInternal ||
@@ -62,6 +65,12 @@ ImmutableString TSymbol::name() const
 
 ImmutableString TSymbol::getMangledName() const
 {
+    if (mSymbolClass == SymbolClass::Function)
+    {
+        // We do this instead of using proper virtual functions so that we can better support
+        // constexpr symbols.
+        return static_cast<const TFunction *>(this)->getFunctionMangledName();
+    }
     ASSERT(mSymbolType != SymbolType::Empty);
     return name();
 }
@@ -71,26 +80,28 @@ TVariable::TVariable(TSymbolTable *symbolTable,
                      const TType *type,
                      SymbolType symbolType,
                      TExtension extension)
-    : TSymbol(symbolTable, name, symbolType, extension), mType(type), unionArray(nullptr)
+    : TSymbol(symbolTable, name, symbolType, SymbolClass::Variable, extension),
+      mType(type),
+      unionArray(nullptr)
 {
     ASSERT(mType);
+    ASSERT(name.empty() || symbolType != SymbolType::Empty);
 }
 
 TStructure::TStructure(TSymbolTable *symbolTable,
                        const ImmutableString &name,
                        const TFieldList *fields,
                        SymbolType symbolType)
-    : TSymbol(symbolTable, name, symbolType), TFieldListCollection(fields)
-{
-}
+    : TSymbol(symbolTable, name, symbolType, SymbolClass::Struct), TFieldListCollection(fields)
+{}
 
 TStructure::TStructure(const TSymbolUniqueId &id,
                        const ImmutableString &name,
                        TExtension extension,
                        const TFieldList *fields)
-    : TSymbol(id, name, SymbolType::BuiltIn, extension), TFieldListCollection(fields)
-{
-}
+    : TSymbol(id, name, SymbolType::BuiltIn, extension, SymbolClass::Struct),
+      TFieldListCollection(fields)
+{}
 
 void TStructure::createSamplerSymbols(const char *namePrefix,
                                       const TString &apiNamePrefix,
@@ -117,7 +128,7 @@ void TStructure::createSamplerSymbols(const char *namePrefix,
 void TStructure::setName(const ImmutableString &name)
 {
     ImmutableString *mutableName = const_cast<ImmutableString *>(&mName);
-    *mutableName         = name;
+    *mutableName                 = name;
 }
 
 TInterfaceBlock::TInterfaceBlock(TSymbolTable *symbolTable,
@@ -126,7 +137,7 @@ TInterfaceBlock::TInterfaceBlock(TSymbolTable *symbolTable,
                                  const TLayoutQualifier &layoutQualifier,
                                  SymbolType symbolType,
                                  TExtension extension)
-    : TSymbol(symbolTable, name, symbolType, extension),
+    : TSymbol(symbolTable, name, symbolType, SymbolClass::InterfaceBlock, extension),
       TFieldListCollection(fields),
       mBlockStorage(layoutQualifier.blockStorage),
       mBinding(layoutQualifier.binding)
@@ -138,19 +149,18 @@ TInterfaceBlock::TInterfaceBlock(const TSymbolUniqueId &id,
                                  const ImmutableString &name,
                                  TExtension extension,
                                  const TFieldList *fields)
-    : TSymbol(id, name, SymbolType::BuiltIn, extension),
+    : TSymbol(id, name, SymbolType::BuiltIn, extension, SymbolClass::InterfaceBlock),
       TFieldListCollection(fields),
       mBlockStorage(EbsUnspecified),
       mBinding(0)
-{
-}
+{}
 
 TFunction::TFunction(TSymbolTable *symbolTable,
                      const ImmutableString &name,
                      SymbolType symbolType,
                      const TType *retType,
                      bool knownToNotHaveSideEffects)
-    : TSymbol(symbolTable, name, symbolType, TExtension::UNDEFINED),
+    : TSymbol(symbolTable, name, symbolType, SymbolClass::Function, TExtension::UNDEFINED),
       mParametersVector(new TParamVector()),
       mParameters(nullptr),
       mParamCount(0u),
@@ -172,7 +182,7 @@ void TFunction::addParameter(const TVariable *p)
     mParametersVector->push_back(p);
     mParameters  = mParametersVector->data();
     mParamCount  = mParametersVector->size();
-    mMangledName = ImmutableString("");
+    mMangledName = kEmptyImmutableString;
 }
 
 void TFunction::shareParameters(const TFunction &parametersSource)
@@ -207,4 +217,22 @@ bool TFunction::isImageFunction() const
            (name() == kImageSizeName || name() == kImageLoadName || name() == kImageStoreName);
 }
 
+bool TFunction::isAtomicCounterFunction() const
+{
+    return SymbolType() == SymbolType::BuiltIn && name().beginsWith(kAtomicCounterName);
+}
+
+bool TFunction::hasSamplerInStructParams() const
+{
+    for (size_t paramIndex = 0; paramIndex < mParamCount; ++paramIndex)
+    {
+        const TVariable *param = getParam(paramIndex);
+        if (param->getType().isStructureContainingSamplers())
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
 }  // namespace sh

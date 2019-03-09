@@ -9,16 +9,26 @@
 
 #include "libANGLE/renderer/vulkan/android/DisplayVkAndroid.h"
 
+#include <android/log.h>
 #include <android/native_window.h>
 #include <vulkan/vulkan.h>
 
+#include "libANGLE/renderer/vulkan/RendererVk.h"
+#include "libANGLE/renderer/vulkan/android/HardwareBufferImageSiblingVkAndroid.h"
 #include "libANGLE/renderer/vulkan/android/WindowSurfaceVkAndroid.h"
+#include "libANGLE/renderer/vulkan/vk_caps_utils.h"
 
 namespace rx
 {
 
-DisplayVkAndroid::DisplayVkAndroid(const egl::DisplayState &state) : DisplayVk(state)
+DisplayVkAndroid::DisplayVkAndroid(const egl::DisplayState &state) : DisplayVk(state) {}
+
+egl::Error DisplayVkAndroid::initialize(egl::Display *display)
 {
+    ANGLE_TRY(DisplayVk::initialize(display));
+    std::string rendererDescription = mRenderer->getRendererDescription();
+    __android_log_print(ANDROID_LOG_INFO, "ANGLE", "%s", rendererDescription.c_str());
+    return egl::NoError();
 }
 
 bool DisplayVkAndroid::isValidNativeWindow(EGLNativeWindowType window) const
@@ -36,57 +46,52 @@ SurfaceImpl *DisplayVkAndroid::createWindowSurfaceVk(const egl::SurfaceState &st
 
 egl::ConfigSet DisplayVkAndroid::generateConfigs()
 {
-    // TODO(jmadill): Multiple configs, pbuffers, and proper checking of config attribs.
-    egl::Config rgba;
-    rgba.renderTargetFormat    = GL_RGBA8;
-    rgba.depthStencilFormat    = GL_NONE;
-    rgba.bufferSize            = 32;
-    rgba.redSize               = 8;
-    rgba.greenSize             = 8;
-    rgba.blueSize              = 8;
-    rgba.alphaSize             = 8;
-    rgba.alphaMaskSize         = 0;
-    rgba.bindToTextureRGB      = EGL_FALSE;
-    rgba.bindToTextureRGBA     = EGL_FALSE;
-    rgba.colorBufferType       = EGL_RGB_BUFFER;
-    rgba.configCaveat          = EGL_NONE;
-    rgba.conformant            = 0;
-    rgba.depthSize             = 0;
-    rgba.stencilSize           = 0;
-    rgba.level                 = 0;
-    rgba.matchNativePixmap     = EGL_NONE;
-    rgba.maxPBufferWidth       = 0;
-    rgba.maxPBufferHeight      = 0;
-    rgba.maxPBufferPixels      = 0;
-    rgba.maxSwapInterval       = 1;
-    rgba.minSwapInterval       = 1;
-    rgba.nativeRenderable      = EGL_TRUE;
-    rgba.nativeVisualID        = 0;
-    rgba.nativeVisualType      = EGL_NONE;
-    rgba.renderableType        = EGL_OPENGL_ES2_BIT;
-    rgba.sampleBuffers         = 0;
-    rgba.samples               = 0;
-    rgba.surfaceType           = EGL_WINDOW_BIT;
-    rgba.optimalOrientation    = 0;
-    rgba.transparentType       = EGL_NONE;
-    rgba.transparentRedValue   = 0;
-    rgba.transparentGreenValue = 0;
-    rgba.transparentBlueValue  = 0;
-    rgba.colorComponentType    = EGL_COLOR_COMPONENT_TYPE_FIXED_EXT;
-
-    egl::Config rgbaD24S8;
-    rgbaD24S8                    = rgba;
-    rgbaD24S8.depthStencilFormat = GL_DEPTH24_STENCIL8;
-    rgbaD24S8.depthSize          = 24;
-    rgbaD24S8.stencilSize        = 8;
-
-    egl::ConfigSet configSet;
-    configSet.add(rgba);
-    configSet.add(rgbaD24S8);
-    return configSet;
+    constexpr GLenum kColorFormats[] = {GL_RGBA8, GL_RGB8, GL_RGB565, GL_RGB10_A2, GL_RGBA16F};
+    constexpr EGLint kSampleCounts[] = {0};
+    return egl_vk::GenerateConfigs(kColorFormats, egl_vk::kConfigDepthStencilFormats, kSampleCounts,
+                                   this);
 }
 
-const char *DisplayVkAndroid::getWSIName() const
+bool DisplayVkAndroid::checkConfigSupport(egl::Config *config)
+{
+    // TODO(geofflang): Test for native support and modify the config accordingly.
+    // anglebug.com/2692
+    return true;
+}
+
+egl::Error DisplayVkAndroid::validateImageClientBuffer(const gl::Context *context,
+                                                       EGLenum target,
+                                                       EGLClientBuffer clientBuffer,
+                                                       const egl::AttributeMap &attribs) const
+{
+    switch (target)
+    {
+        case EGL_NATIVE_BUFFER_ANDROID:
+            return HardwareBufferImageSiblingVkAndroid::ValidateHardwareBuffer(mRenderer,
+                                                                               clientBuffer);
+
+        default:
+            return DisplayVk::validateImageClientBuffer(context, target, clientBuffer, attribs);
+    }
+}
+
+ExternalImageSiblingImpl *DisplayVkAndroid::createExternalImageSibling(
+    const gl::Context *context,
+    EGLenum target,
+    EGLClientBuffer buffer,
+    const egl::AttributeMap &attribs)
+{
+    switch (target)
+    {
+        case EGL_NATIVE_BUFFER_ANDROID:
+            return new HardwareBufferImageSiblingVkAndroid(buffer);
+
+        default:
+            return DisplayVk::createExternalImageSibling(context, target, buffer, attribs);
+    }
+}
+
+const char *DisplayVkAndroid::getWSIExtension() const
 {
     return VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
 }

@@ -24,11 +24,10 @@ static int IgnoreX11Errors(Display *, XErrorEvent *)
 WindowSurfaceGLX::WindowSurfaceGLX(const egl::SurfaceState &state,
                                    const FunctionsGLX &glx,
                                    DisplayGLX *glxDisplay,
-                                   RendererGL *renderer,
                                    Window window,
                                    Display *display,
                                    glx::FBConfig fbConfig)
-    : SurfaceGLX(state, renderer),
+    : SurfaceGLX(state),
       mParent(window),
       mWindow(0),
       mDisplay(display),
@@ -36,8 +35,7 @@ WindowSurfaceGLX::WindowSurfaceGLX(const egl::SurfaceState &state,
       mGLXDisplay(glxDisplay),
       mFBConfig(fbConfig),
       mGLXWindow(0)
-{
-}
+{}
 
 WindowSurfaceGLX::~WindowSurfaceGLX()
 {
@@ -87,7 +85,7 @@ egl::Error WindowSurfaceGLX::initialize(const egl::Display *display)
     {
         return egl::EglBadNativeWindow() << "Failed to get the XVisualInfo for the child window.";
     }
-    Visual* visual = visualInfo->visual;
+    Visual *visual = visualInfo->visual;
 
     if (!getWindowDimensions(mParent, &mParentWidth, &mParentHeight))
     {
@@ -105,17 +103,17 @@ egl::Error WindowSurfaceGLX::initialize(const egl::Display *display)
     unsigned long attributeMask = CWColormap | CWBorderPixel;
 
     Colormap colormap = XCreateColormap(mDisplay, mParent, visual, AllocNone);
-    if(!colormap)
+    if (!colormap)
     {
         XFree(visualInfo);
         return egl::EglBadNativeWindow() << "Failed to create the Colormap for the child window.";
     }
-    attributes.colormap = colormap;
+    attributes.colormap     = colormap;
     attributes.border_pixel = 0;
 
-    //TODO(cwallez) set up our own error handler to see if the call failed
-    mWindow = XCreateWindow(mDisplay, mParent, 0, 0, mParentWidth, mParentHeight,
-                            0, visualInfo->depth, InputOutput, visual, attributeMask, &attributes);
+    // TODO(cwallez) set up our own error handler to see if the call failed
+    mWindow    = XCreateWindow(mDisplay, mParent, 0, 0, mParentWidth, mParentHeight, 0,
+                            visualInfo->depth, InputOutput, visual, attributeMask, &attributes);
     mGLXWindow = mGLX.createWindow(mFBConfig, mWindow, nullptr);
 
     XMapWindow(mDisplay, mWindow);
@@ -236,7 +234,9 @@ glx::Drawable WindowSurfaceGLX::getDrawable() const
     return mGLXWindow;
 }
 
-bool WindowSurfaceGLX::getWindowDimensions(Window window, unsigned int *width, unsigned int *height) const
+bool WindowSurfaceGLX::getWindowDimensions(Window window,
+                                           unsigned int *width,
+                                           unsigned int *height) const
 {
     Window root;
     int x, y;

@@ -22,7 +22,6 @@ class WindowSurfaceWGL : public SurfaceWGL
 {
   public:
     WindowSurfaceWGL(const egl::SurfaceState &state,
-                     RendererGL *renderer,
                      EGLNativeWindowType window,
                      int pixelFormat,
                      const FunctionsWGL *functions,
@@ -64,6 +63,6 @@ class WindowSurfaceWGL : public SurfaceWGL
     EGLint mSwapBehavior;
 };
 
-}
+}  // namespace rx
 
-#endif // LIBANGLE_RENDERER_GL_WGL_WINDOWSURFACEWGL_H_
+#endif  // LIBANGLE_RENDERER_GL_WGL_WINDOWSURFACEWGL_H_

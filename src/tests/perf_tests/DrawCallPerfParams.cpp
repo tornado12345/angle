@@ -11,6 +11,26 @@
 
 #include <sstream>
 
+DrawCallPerfParams::DrawCallPerfParams()
+{
+    majorVersion = 2;
+    minorVersion = 0;
+    windowWidth  = 64;
+    windowHeight = 64;
+
+// Lower the iteration count in debug.
+#if !defined(NDEBUG)
+    iterationsPerStep = 100;
+#else
+    iterationsPerStep = 20000;
+#endif
+    runTimeSeconds = 10.0;
+    numTris        = 1;
+    useFBO         = false;
+}
+
+DrawCallPerfParams::~DrawCallPerfParams() = default;
+
 std::string DrawCallPerfParams::suffix() const
 {
     std::stringstream strstr;
@@ -65,7 +85,6 @@ DrawCallPerfParams DrawCallPerfValidationOnly()
 {
     DrawCallPerfParams params;
     params.eglParameters  = DEFAULT();
-    params.iterations     = 10000;
     params.numTris        = 0;
     params.runTimeSeconds = 5.0;
     return params;
@@ -76,5 +95,13 @@ DrawCallPerfParams DrawCallPerfVulkanParams(bool useNullDevice, bool renderToTex
     DrawCallPerfParams params;
     params.eglParameters = useNullDevice ? VULKAN_NULL() : VULKAN();
     params.useFBO        = renderToTexture;
+    return params;
+}
+
+DrawCallPerfParams DrawCallPerfWGLParams(bool renderToTexture)
+{
+    DrawCallPerfParams params;
+    params.useFBO = renderToTexture;
+    params.driver = angle::GLESDriverType::SystemWGL;
     return params;
 }

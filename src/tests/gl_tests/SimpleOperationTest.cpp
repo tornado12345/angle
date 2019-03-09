@@ -10,8 +10,9 @@
 
 #include <vector>
 
-#include "random_utils.h"
 #include "test_utils/gl_raii.h"
+#include "util/EGLWindow.h"
+#include "util/random_utils.h"
 
 using namespace angle;
 
@@ -49,6 +50,11 @@ class SimpleOperationTest : public ANGLETest
     }
 
     void verifyBuffer(const std::vector<uint8_t> &data, GLenum binding);
+
+    template <typename T>
+    void testDrawElementsLineLoopUsingClientSideMemory(GLenum indexType,
+                                                       int windowWidth,
+                                                       int windowHeight);
 };
 
 void SimpleOperationTest::verifyBuffer(const std::vector<uint8_t> &data, GLenum binding)
@@ -161,15 +167,14 @@ TEST_P(SimpleOperationTest, CompileVertexShader)
 
 TEST_P(SimpleOperationTest, CompileFragmentShaderSingleVaryingInput)
 {
-    const std::string source =
-        R"(precision mediump float;
-        varying vec4 v_input;
-        void main()
-        {
-            gl_FragColor = v_input;
-        })";
+    constexpr char kFS[] = R"(precision mediump float;
+varying vec4 v_input;
+void main()
+{
+    gl_FragColor = v_input;
+})";
 
-    GLuint shader = CompileShader(GL_FRAGMENT_SHADER, source);
+    GLuint shader = CompileShader(GL_FRAGMENT_SHADER, kFS);
     EXPECT_NE(shader, 0u);
     glDeleteShader(shader);
 
@@ -187,7 +192,7 @@ TEST_P(SimpleOperationTest, ClearAndSwap)
     // Can't check the pixel result after the swap, and checking the pixel result affects the
     // behaviour of the test on the Vulkan back-end, so don't bother checking correctness.
     ASSERT_GL_NO_ERROR();
-    EXPECT_EGL_SUCCESS();
+    ASSERT_FALSE(getGLWindow()->hasError());
 }
 
 // Simple case of setting a scissor, enabled or disabled.
@@ -214,67 +219,46 @@ TEST_P(SimpleOperationTest, ScissorTest)
 
 TEST_P(SimpleOperationTest, LinkProgramShadersNoInputs)
 {
-    const std::string vsSource =
-        R"(void main()
-        {
-            gl_Position = vec4(1.0, 1.0, 1.0, 1.0);
-        })";
+    constexpr char kVS[] = "void main() { gl_Position = vec4(1.0, 1.0, 1.0, 1.0); }";
+    constexpr char kFS[] = "void main() { gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); }";
 
-    const std::string fsSource =
-        R"(void main()
-        {
-            gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-        })";
-
-    const GLuint program = CompileProgram(vsSource, fsSource);
-    EXPECT_NE(program, 0u);
-    glDeleteProgram(program);
-
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
     ASSERT_GL_NO_ERROR();
 }
 
 TEST_P(SimpleOperationTest, LinkProgramWithUniforms)
 {
-    const std::string vsSource =
-        R"(void main()
-        {
-            gl_Position = vec4(1.0, 1.0, 1.0, 1.0);
-        })";
-    const std::string fsSource =
-        R"(precision mediump float;
-        uniform vec4 u_input;
-        void main()
-        {
-            gl_FragColor = u_input;
-        })";
+    constexpr char kVS[] = R"(void main()
+{
+    gl_Position = vec4(1.0, 1.0, 1.0, 1.0);
+})";
+    constexpr char kFS[] = R"(precision mediump float;
+uniform vec4 u_input;
+void main()
+{
+    gl_FragColor = u_input;
+})";
 
-    const GLuint program = CompileProgram(vsSource, fsSource);
-    EXPECT_NE(program, 0u);
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
 
     const GLint uniformLoc = glGetUniformLocation(program, "u_input");
     EXPECT_NE(-1, uniformLoc);
-
-    glDeleteProgram(program);
 
     ASSERT_GL_NO_ERROR();
 }
 
 TEST_P(SimpleOperationTest, LinkProgramWithAttributes)
 {
-    const std::string vsSource =
-        R"(attribute vec4 a_input;
-        void main()
-        {
-            gl_Position = a_input;
-        })";
+    constexpr char kVS[] = R"(attribute vec4 a_input;
+void main()
+{
+    gl_Position = a_input;
+})";
 
-    const GLuint program = CompileProgram(vsSource, kGreenFragmentShader);
-    EXPECT_NE(program, 0u);
+    ANGLE_GL_PROGRAM(program, kVS, kGreenFragmentShader);
 
     const GLint attribLoc = glGetAttribLocation(program, "a_input");
     EXPECT_NE(-1, attribLoc);
-
-    glDeleteProgram(program);
 
     ASSERT_GL_NO_ERROR();
 }
@@ -388,6 +372,48 @@ TEST_P(SimpleOperationTest, DrawLine)
 
     glClear(GL_COLOR_BUFFER_BIT);
     glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size()));
+
+    glDisableVertexAttribArray(positionLocation);
+
+    ASSERT_GL_NO_ERROR();
+
+    for (auto x = 0; x < getWindowWidth(); x++)
+    {
+        EXPECT_PIXEL_COLOR_EQ(x, x, GLColor::green);
+    }
+}
+
+// Simple line test that will use a very large offset in the vertex attributes.
+TEST_P(SimpleOperationTest, DrawLineWithLargeAttribPointerOffset)
+{
+    // We assume in the test the width and height are equal and we are tracing
+    // the line from bottom left to top right. Verify that all pixels along that line
+    // have been traced with green.
+    ASSERT_EQ(getWindowWidth(), getWindowHeight());
+
+    ANGLE_GL_PROGRAM(program, kBasicVertexShader, kGreenFragmentShader);
+    glUseProgram(program);
+
+    int kOffset = 3315;
+    std::vector<Vector3> vertices(kOffset);
+    Vector3 vector1{-1.0f, -1.0f, 0.0f};
+    Vector3 vector2{1.0f, 1.0f, 0.0f};
+    vertices.emplace_back(vector1);
+    vertices.emplace_back(vector2);
+
+    const GLint positionLocation = glGetAttribLocation(program, "position");
+    ASSERT_NE(-1, positionLocation);
+
+    GLBuffer vertexBuffer;
+    glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices[0]) * vertices.size(), vertices.data(),
+                 GL_STATIC_DRAW);
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0,
+                          reinterpret_cast<const void *>(kOffset * sizeof(vertices[0])));
+    glEnableVertexAttribArray(positionLocation);
+
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDrawArrays(GL_LINES, 0, 2);
 
     glDisableVertexAttribArray(positionLocation);
 
@@ -544,13 +570,13 @@ TEST_P(SimpleOperationTest, DrawIndexedQuadAndSwap)
 // Draw with a fragment uniform.
 TEST_P(SimpleOperationTest, DrawQuadWithFragmentUniform)
 {
-    const std::string &fragmentShader =
+    constexpr char kFS[] =
         "uniform mediump vec4 color;\n"
         "void main()\n"
         "{\n"
         "    gl_FragColor = color;\n"
         "}";
-    ANGLE_GL_PROGRAM(program, kBasicVertexShader, fragmentShader);
+    ANGLE_GL_PROGRAM(program, kBasicVertexShader, kFS);
 
     GLint location = glGetUniformLocation(program, "color");
     ASSERT_NE(-1, location);
@@ -567,7 +593,7 @@ TEST_P(SimpleOperationTest, DrawQuadWithFragmentUniform)
 // Draw with a vertex uniform.
 TEST_P(SimpleOperationTest, DrawQuadWithVertexUniform)
 {
-    const std::string &vertexShader =
+    constexpr char kVS[] =
         "attribute vec3 position;\n"
         "uniform vec4 color;\n"
         "varying vec4 vcolor;\n"
@@ -576,13 +602,13 @@ TEST_P(SimpleOperationTest, DrawQuadWithVertexUniform)
         "    gl_Position = vec4(position, 1);\n"
         "    vcolor = color;\n"
         "}";
-    const std::string &fragmentShader =
+    constexpr char kFS[] =
         "varying mediump vec4 vcolor;\n"
         "void main()\n"
         "{\n"
         "    gl_FragColor = vcolor;\n"
         "}";
-    ANGLE_GL_PROGRAM(program, vertexShader, fragmentShader);
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
 
     const GLint location = glGetUniformLocation(program, "color");
     ASSERT_NE(-1, location);
@@ -599,7 +625,7 @@ TEST_P(SimpleOperationTest, DrawQuadWithVertexUniform)
 // Draw with two uniforms.
 TEST_P(SimpleOperationTest, DrawQuadWithTwoUniforms)
 {
-    const std::string &vertexShader =
+    constexpr char kVS[] =
         "attribute vec3 position;\n"
         "uniform vec4 color1;\n"
         "varying vec4 vcolor1;\n"
@@ -608,14 +634,14 @@ TEST_P(SimpleOperationTest, DrawQuadWithTwoUniforms)
         "    gl_Position = vec4(position, 1);\n"
         "    vcolor1 = color1;\n"
         "}";
-    const std::string &fragmentShader =
+    constexpr char kFS[] =
         "uniform mediump vec4 color2;\n"
         "varying mediump vec4 vcolor1;\n"
         "void main()\n"
         "{\n"
         "    gl_FragColor = vcolor1 + color2;\n"
         "}";
-    ANGLE_GL_PROGRAM(program, vertexShader, fragmentShader);
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
 
     const GLint location1 = glGetUniformLocation(program, "color1");
     ASSERT_NE(-1, location1);
@@ -636,8 +662,7 @@ TEST_P(SimpleOperationTest, DrawQuadWithTwoUniforms)
 // Tests a shader program with more than one vertex attribute, with vertex buffers.
 TEST_P(SimpleOperationTest, ThreeVertexAttributes)
 {
-    const std::string vertexShader =
-        R"(attribute vec2 position;
+    constexpr char kVS[] = R"(attribute vec2 position;
 attribute vec4 color1;
 attribute vec4 color2;
 varying vec4 color;
@@ -647,8 +672,7 @@ void main()
     color = color1 + color2;
 })";
 
-    const std::string fragmentShader =
-        R"(precision mediump float;
+    constexpr char kFS[] = R"(precision mediump float;
 varying vec4 color;
 void main()
 {
@@ -656,7 +680,7 @@ void main()
 }
 )";
 
-    ANGLE_GL_PROGRAM(program, vertexShader, fragmentShader);
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
 
     glUseProgram(program);
 
@@ -778,19 +802,21 @@ TEST_P(SimpleOperationTest, DrawWith2DTexture)
     EXPECT_PIXEL_COLOR_EQ(w, h, GLColor::yellow);
 }
 
-// Draw a line loop using a drawElement call and client side memory.
-TEST_P(SimpleOperationTest, DrawElementsLineLoopUsingClientSideMemory)
+template <typename T>
+void SimpleOperationTest::testDrawElementsLineLoopUsingClientSideMemory(GLenum indexType,
+                                                                        int windowWidth,
+                                                                        int windowHeight)
 {
     ANGLE_GL_PROGRAM(program, kBasicVertexShader, kGreenFragmentShader);
     glUseProgram(program);
 
     // We expect to draw a square with these 4 vertices with a drawArray call.
     std::vector<Vector3> vertices;
-    CreatePixelCenterWindowCoords({{32, 96}, {32, 32}, {96, 32}, {96, 96}}, getWindowWidth(),
-                                  getWindowHeight(), &vertices);
+    CreatePixelCenterWindowCoords({{32, 96}, {32, 32}, {96, 32}, {96, 96}}, windowWidth,
+                                  windowHeight, &vertices);
 
     // If we use these indices to draw however, we should be drawing an hourglass.
-    std::vector<GLushort> indices{3, 2, 1, 0};
+    std::vector<T> indices{3, 2, 1, 0};
 
     GLint positionLocation = glGetAttribLocation(program, "position");
     ASSERT_NE(-1, positionLocation);
@@ -803,13 +829,13 @@ TEST_P(SimpleOperationTest, DrawElementsLineLoopUsingClientSideMemory)
     glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
     glEnableVertexAttribArray(positionLocation);
     glClear(GL_COLOR_BUFFER_BIT);
-    glDrawElements(GL_LINE_LOOP, 4, GL_UNSIGNED_SHORT, indices.data());
+    glDrawElements(GL_LINE_LOOP, 4, indexType, indices.data());
     glDisableVertexAttribArray(positionLocation);
 
     ASSERT_GL_NO_ERROR();
 
-    int quarterWidth  = getWindowWidth() / 4;
-    int quarterHeight = getWindowHeight() / 4;
+    int quarterWidth  = windowWidth / 4;
+    int quarterHeight = windowHeight / 4;
 
     // Bottom left
     EXPECT_PIXEL_COLOR_EQ(quarterWidth, quarterHeight, GLColor::green);
@@ -822,6 +848,20 @@ TEST_P(SimpleOperationTest, DrawElementsLineLoopUsingClientSideMemory)
 
     // Verify line is closed between the 2 last vertices
     EXPECT_PIXEL_COLOR_EQ((quarterWidth * 2), quarterHeight, GLColor::green);
+}
+
+// Draw a line loop using a drawElement call and client side memory.
+TEST_P(SimpleOperationTest, DrawElementsLineLoopUsingUShortClientSideMemory)
+{
+    testDrawElementsLineLoopUsingClientSideMemory<GLushort>(GL_UNSIGNED_SHORT, getWindowWidth(),
+                                                            getWindowHeight());
+}
+
+// Draw a line loop using a drawElement call and client side memory.
+TEST_P(SimpleOperationTest, DrawElementsLineLoopUsingUByteClientSideMemory)
+{
+    testDrawElementsLineLoopUsingClientSideMemory<GLubyte>(GL_UNSIGNED_BYTE, getWindowWidth(),
+                                                           getWindowHeight());
 }
 
 // Creates a program with a cube texture and renders with it.
@@ -952,7 +992,8 @@ void main()
         center *= 0.5f;
         center += Vector2(0.5f);
         center *= Vector2(getWindowWidth(), getWindowHeight());
-        EXPECT_PIXEL_COLOR_EQ(center.x(), center.y(), colors[faceIndex][0]);
+        EXPECT_PIXEL_COLOR_EQ(static_cast<GLint>(center.x()), static_cast<GLint>(center.y()),
+                              colors[faceIndex][0]);
     }
 }
 
@@ -1012,7 +1053,38 @@ TEST_P(SimpleOperationTest, RenderbufferAttachment)
     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
 }
 
-// Use this to select which configurations (e.g. which renderer, which GLES major version) these tests should be run against.
+// Tests that using desktop GL_QUADS/GL_POLYGONS enums generate the correct error.
+TEST_P(SimpleOperationTest, PrimitiveModeNegativeTest)
+{
+    // Draw a correct quad.
+    ANGLE_GL_PROGRAM(program, kBasicVertexShader, kGreenFragmentShader);
+    glUseProgram(program);
+
+    GLint positionLocation = glGetAttribLocation(program, "position");
+    ASSERT_NE(-1, positionLocation);
+
+    setupQuadVertexBuffer(0.5f, 1.0f);
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(positionLocation);
+
+    // Tests that TRIANGLES works.
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    // Tests that specific invalid enums don't work.
+    glDrawArrays(static_cast<GLenum>(7), 0, 6);
+    EXPECT_GL_ERROR(GL_INVALID_ENUM);
+
+    glDrawArrays(static_cast<GLenum>(8), 0, 6);
+    EXPECT_GL_ERROR(GL_INVALID_ENUM);
+
+    glDrawArrays(static_cast<GLenum>(9), 0, 6);
+    EXPECT_GL_ERROR(GL_INVALID_ENUM);
+}
+
+// Use this to select which configurations (e.g. which renderer, which GLES major version) these
+// tests should be run against.
 ANGLE_INSTANTIATE_TEST(SimpleOperationTest,
                        ES2_D3D9(),
                        ES2_D3D11(EGL_EXPERIMENTAL_PRESENT_PATH_COPY_ANGLE),
@@ -1022,6 +1094,7 @@ ANGLE_INSTANTIATE_TEST(SimpleOperationTest,
                        ES3_OPENGL(),
                        ES2_OPENGLES(),
                        ES3_OPENGLES(),
+                       ES2_WGL(),
                        ES2_VULKAN());
 
-} // namespace
+}  // namespace

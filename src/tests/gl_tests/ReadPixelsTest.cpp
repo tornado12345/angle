@@ -11,7 +11,7 @@
 
 #include <array>
 
-#include "random_utils.h"
+#include "util/random_utils.h"
 
 using namespace angle;
 
@@ -286,7 +286,7 @@ class ReadPixelsPBODrawTest : public ReadPixelsPBOTest
     {
         ReadPixelsPBOTest::SetUp();
 
-        const char *vertexShaderSrc =
+        constexpr char kVS[] =
             "attribute vec4 aTest; attribute vec2 aPosition; varying vec4 vTest;\n"
             "void main()\n"
             "{\n"
@@ -295,14 +295,14 @@ class ReadPixelsPBODrawTest : public ReadPixelsPBOTest
             "    gl_PointSize = 1.0;\n"
             "}";
 
-        const char *fragmentShaderSrc =
+        constexpr char kFS[] =
             "precision mediump float; varying vec4 vTest;\n"
             "void main()\n"
             "{\n"
             "    gl_FragColor = vTest;\n"
             "}";
 
-        mProgram = CompileProgram(vertexShaderSrc, fragmentShaderSrc);
+        mProgram = CompileProgram(kVS, kFS);
         ASSERT_NE(0u, mProgram);
 
         glGenBuffers(1, &mPositionVBO);
@@ -711,7 +711,7 @@ TEST_P(ReadPixelsErrorTest, ReadBufferIsNone)
 
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
-ANGLE_INSTANTIATE_TEST(ReadPixelsTest, ES2_D3D11(), ES2_OPENGL(), ES2_OPENGLES());
+ANGLE_INSTANTIATE_TEST(ReadPixelsTest, ES2_D3D11(), ES2_OPENGL(), ES2_OPENGLES(), ES2_VULKAN());
 ANGLE_INSTANTIATE_TEST(ReadPixelsPBOTest, ES3_D3D11(), ES3_OPENGL(), ES3_OPENGLES());
 ANGLE_INSTANTIATE_TEST(ReadPixelsPBODrawTest, ES3_D3D11(), ES3_OPENGL(), ES3_OPENGLES());
 ANGLE_INSTANTIATE_TEST(ReadPixelsMultisampleTest, ES3_D3D11(), ES3_OPENGL(), ES3_OPENGLES());

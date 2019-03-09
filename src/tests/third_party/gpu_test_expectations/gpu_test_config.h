@@ -33,14 +33,16 @@ class GPU_EXPORT GPUTestConfig {
     kOsMacElCapitan = 1 << 10,
     kOsMacSierra = 1 << 11,
     kOsMacHighSierra = 1 << 12,
+    kOsMacMojave = 1 << 13,
     kOsMac = kOsMacLeopard | kOsMacSnowLeopard | kOsMacLion |
              kOsMacMountainLion | kOsMacMavericks | kOsMacYosemite |
-             kOsMacElCapitan | kOsMacSierra | kOsMacHighSierra,
-    kOsLinux = 1 << 13,
-    kOsChromeOS = 1 << 14,
-    kOsAndroid = 1 << 15,
-    kOsWin10 = 1 << 16,
+             kOsMacElCapitan | kOsMacSierra | kOsMacHighSierra | kOsMacMojave,
+    kOsLinux = 1 << 14,
+    kOsChromeOS = 1 << 15,
+    kOsAndroid = 1 << 16,
+    kOsWin10 = 1 << 17,
     kOsWin = kOsWinXP | kOsWinVista | kOsWin7 | kOsWin8 | kOsWin10,
+    kOsFuchsia = 1 << 18,
   };
 
   enum BuildType {
@@ -112,7 +114,7 @@ class GPU_EXPORT GPUTestConfig {
 
 class GPU_EXPORT GPUTestBotConfig : public GPUTestConfig {
  public:
-  GPUTestBotConfig() { }
+  GPUTestBotConfig() = default;
   ~GPUTestBotConfig() override;
 
   // This should only be called when no gpu_vendor is added.
@@ -132,7 +134,7 @@ class GPU_EXPORT GPUTestBotConfig : public GPUTestConfig {
   bool Matches(const std::string& config_data) const;
 
   // Setup the config with the current gpu testing environment.
-  // If gpu_info is NULL, collect GPUInfo first.
+  // If gpu_info is nullptr, collect GPUInfo first.
   bool LoadCurrentConfig(const GPUInfo* gpu_info);
 
   // Check if this bot's config matches |config_data| or any of the |configs|.

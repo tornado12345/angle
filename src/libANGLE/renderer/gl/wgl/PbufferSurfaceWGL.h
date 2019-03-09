@@ -22,7 +22,6 @@ class PbufferSurfaceWGL : public SurfaceWGL
 {
   public:
     PbufferSurfaceWGL(const egl::SurfaceState &state,
-                      RendererGL *renderer,
                       EGLint width,
                       EGLint height,
                       EGLenum textureFormat,
@@ -74,6 +73,6 @@ class PbufferSurfaceWGL : public SurfaceWGL
     const FunctionsWGL *mFunctionsWGL;
 };
 
-}
+}  // namespace rx
 
-#endif // LIBANGLE_RENDERER_GL_WGL_PBUFFERSURFACEWGL_H_
+#endif  // LIBANGLE_RENDERER_GL_WGL_PBUFFERSURFACEWGL_H_

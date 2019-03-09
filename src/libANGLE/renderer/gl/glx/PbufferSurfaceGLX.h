@@ -9,8 +9,8 @@
 #ifndef LIBANGLE_RENDERER_GL_GLX_PBUFFERSURFACEGLX_H_
 #define LIBANGLE_RENDERER_GL_GLX_PBUFFERSURFACEGLX_H_
 
-#include "libANGLE/renderer/gl/glx/platform_glx.h"
 #include "libANGLE/renderer/gl/glx/SurfaceGLX.h"
+#include "libANGLE/renderer/gl/glx/platform_glx.h"
 
 namespace rx
 {
@@ -21,7 +21,6 @@ class PbufferSurfaceGLX : public SurfaceGLX
 {
   public:
     PbufferSurfaceGLX(const egl::SurfaceState &state,
-                      RendererGL *renderer,
                       EGLint width,
                       EGLint height,
                       bool largest,
@@ -66,4 +65,4 @@ class PbufferSurfaceGLX : public SurfaceGLX
 
 }  // namespace rx
 
-#endif // LIBANGLE_RENDERER_GL_GLX_PBUFFERSURFACEGLX_H_
+#endif  // LIBANGLE_RENDERER_GL_GLX_PBUFFERSURFACEGLX_H_

@@ -25,6 +25,7 @@ namespace rx
 class DisplayCGL;
 class FramebufferGL;
 class FunctionsGL;
+class RendererGL;
 class StateManagerGL;
 struct WorkaroundsGL;
 
@@ -57,7 +58,6 @@ class WindowSurfaceCGL : public SurfaceGL
     WindowSurfaceCGL(const egl::SurfaceState &state,
                      RendererGL *renderer,
                      EGLNativeWindowType layer,
-                     const FunctionsGL *functions,
                      CGLContextObj context);
     ~WindowSurfaceCGL() override;
 
@@ -83,7 +83,8 @@ class WindowSurfaceCGL : public SurfaceGL
     EGLint isPostSubBufferSupported() const override;
     EGLint getSwapBehavior() const override;
 
-    FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
+    FramebufferImpl *createDefaultFramebuffer(const gl::Context *context,
+                                              const gl::FramebufferState &state) override;
 
   private:
     SwapLayer *mSwapLayer;
@@ -94,13 +95,10 @@ class WindowSurfaceCGL : public SurfaceGL
     CGLContextObj mContext;
     const FunctionsGL *mFunctions;
     StateManagerGL *mStateManager;
-    RendererGL *mRenderer;
-    const WorkaroundsGL &mWorkarounds;
 
-    GLuint mFramebuffer;
     GLuint mDSRenderbuffer;
 };
 
 }  // namespace rx
 
-#endif // LIBANGLE_RENDERER_GL_CGL_WINDOWSURFACECGL_H_
+#endif  // LIBANGLE_RENDERER_GL_CGL_WINDOWSURFACECGL_H_

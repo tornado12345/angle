@@ -8,37 +8,12 @@
 
 #include "libANGLE/angletypes.h"
 #include "libANGLE/Program.h"
-#include "libANGLE/VertexAttribute.h"
 #include "libANGLE/State.h"
 #include "libANGLE/VertexArray.h"
+#include "libANGLE/VertexAttribute.h"
 
 namespace gl
 {
-
-PrimitiveType GetPrimitiveType(GLenum drawMode)
-{
-    switch (drawMode)
-    {
-        case GL_POINTS:
-            return PRIMITIVE_POINTS;
-        case GL_LINES:
-            return PRIMITIVE_LINES;
-        case GL_LINE_STRIP:
-            return PRIMITIVE_LINE_STRIP;
-        case GL_LINE_LOOP:
-            return PRIMITIVE_LINE_LOOP;
-        case GL_TRIANGLES:
-            return PRIMITIVE_TRIANGLES;
-        case GL_TRIANGLE_STRIP:
-            return PRIMITIVE_TRIANGLE_STRIP;
-        case GL_TRIANGLE_FAN:
-            return PRIMITIVE_TRIANGLE_FAN;
-        default:
-            UNREACHABLE();
-            return PRIMITIVE_TYPE_MAX;
-    }
-}
-
 RasterizerState::RasterizerState()
 {
     memset(this, 0, sizeof(RasterizerState));
@@ -135,17 +110,17 @@ SamplerState::SamplerState()
 {
     memset(this, 0, sizeof(SamplerState));
 
-    minFilter     = GL_NEAREST_MIPMAP_LINEAR;
-    magFilter     = GL_LINEAR;
-    wrapS         = GL_REPEAT;
-    wrapT         = GL_REPEAT;
-    wrapR         = GL_REPEAT;
-    maxAnisotropy = 1.0f;
-    minLod        = -1000.0f;
-    maxLod        = 1000.0f;
-    compareMode   = GL_NONE;
-    compareFunc   = GL_LEQUAL;
-    sRGBDecode    = GL_DECODE_EXT;
+    setMinFilter(GL_NEAREST_MIPMAP_LINEAR);
+    setMagFilter(GL_LINEAR);
+    setWrapS(GL_REPEAT);
+    setWrapT(GL_REPEAT);
+    setWrapR(GL_REPEAT);
+    setMaxAnisotropy(1.0f);
+    setMinLod(-1000.0f);
+    setMaxLod(1000.0f);
+    setCompareMode(GL_NONE);
+    setCompareFunc(GL_LEQUAL);
+    setSRGBDecode(GL_DECODE_EXT);
 }
 
 SamplerState::SamplerState(const SamplerState &other) = default;
@@ -159,18 +134,89 @@ SamplerState SamplerState::CreateDefaultForTarget(TextureType type)
     // default min filter is GL_LINEAR and the default s and t wrap modes are GL_CLAMP_TO_EDGE.
     if (type == TextureType::External || type == TextureType::Rectangle)
     {
-        state.minFilter = GL_LINEAR;
-        state.wrapS     = GL_CLAMP_TO_EDGE;
-        state.wrapT     = GL_CLAMP_TO_EDGE;
+        state.mMinFilter = GL_LINEAR;
+        state.mWrapS     = GL_CLAMP_TO_EDGE;
+        state.mWrapT     = GL_CLAMP_TO_EDGE;
     }
 
     return state;
 }
 
+void SamplerState::setMinFilter(GLenum minFilter)
+{
+    mMinFilter                    = minFilter;
+    mCompleteness.typed.minFilter = static_cast<uint8_t>(FromGLenum<FilterMode>(minFilter));
+}
+
+void SamplerState::setMagFilter(GLenum magFilter)
+{
+    mMagFilter                    = magFilter;
+    mCompleteness.typed.magFilter = static_cast<uint8_t>(FromGLenum<FilterMode>(magFilter));
+}
+
+void SamplerState::setWrapS(GLenum wrapS)
+{
+    mWrapS                    = wrapS;
+    mCompleteness.typed.wrapS = static_cast<uint8_t>(FromGLenum<WrapMode>(wrapS));
+}
+
+void SamplerState::setWrapT(GLenum wrapT)
+{
+    mWrapT = wrapT;
+    updateWrapTCompareMode();
+}
+
+void SamplerState::setWrapR(GLenum wrapR)
+{
+    mWrapR = wrapR;
+}
+
+void SamplerState::setMaxAnisotropy(float maxAnisotropy)
+{
+    mMaxAnisotropy = maxAnisotropy;
+}
+
+void SamplerState::setMinLod(GLfloat minLod)
+{
+    mMinLod = minLod;
+}
+
+void SamplerState::setMaxLod(GLfloat maxLod)
+{
+    mMaxLod = maxLod;
+}
+
+void SamplerState::setCompareMode(GLenum compareMode)
+{
+    mCompareMode = compareMode;
+    updateWrapTCompareMode();
+}
+
+void SamplerState::setCompareFunc(GLenum compareFunc)
+{
+    mCompareFunc = compareFunc;
+}
+
+void SamplerState::setSRGBDecode(GLenum sRGBDecode)
+{
+    mSRGBDecode = sRGBDecode;
+}
+
+void SamplerState::setBorderColor(const ColorGeneric &color)
+{
+    mBorderColor = color;
+}
+
+void SamplerState::updateWrapTCompareMode()
+{
+    uint8_t wrap    = static_cast<uint8_t>(FromGLenum<WrapMode>(mWrapT));
+    uint8_t compare = static_cast<uint8_t>(mCompareMode == GL_NONE ? 0x10 : 0x00);
+    mCompleteness.typed.wrapTCompareMode = wrap | compare;
+}
+
 ImageUnit::ImageUnit()
     : texture(), level(0), layered(false), layer(0), access(GL_READ_ONLY), format(GL_R32UI)
-{
-}
+{}
 
 ImageUnit::ImageUnit(const ImageUnit &other) = default;
 
@@ -216,14 +262,15 @@ bool ClipRectangle(const Rectangle &source, const Rectangle &clip, Rectangle *in
     MinMax(clip.x, clip.x + clip.width, &minClipX, &maxClipX);
     MinMax(clip.y, clip.y + clip.height, &minClipY, &maxClipY);
 
-    if (minSourceX >= maxClipX || maxSourceX <= minClipX || minSourceY >= maxClipY || maxSourceY <= minClipY)
+    if (minSourceX >= maxClipX || maxSourceX <= minClipX || minSourceY >= maxClipY ||
+        maxSourceY <= minClipY)
     {
         return false;
     }
     if (intersection)
     {
-        intersection->x = std::max(minSourceX, minClipX);
-        intersection->y = std::max(minSourceY, minClipY);
+        intersection->x      = std::max(minSourceX, minClipX);
+        intersection->y      = std::max(minSourceY, minClipY);
         intersection->width  = std::min(maxSourceX, maxClipX) - std::max(minSourceX, minClipX);
         intersection->height = std::min(maxSourceY, maxClipY) - std::max(minSourceY, minClipY);
     }
@@ -232,13 +279,19 @@ bool ClipRectangle(const Rectangle &source, const Rectangle &clip, Rectangle *in
 
 bool Box::operator==(const Box &other) const
 {
-    return (x == other.x && y == other.y && z == other.z &&
-            width == other.width && height == other.height && depth == other.depth);
+    return (x == other.x && y == other.y && z == other.z && width == other.width &&
+            height == other.height && depth == other.depth);
 }
 
 bool Box::operator!=(const Box &other) const
 {
     return !(*this == other);
+}
+
+Rectangle Box::toRect() const
+{
+    ASSERT(z == 0 && depth == 1);
+    return Rectangle(x, y, width, height);
 }
 
 bool operator==(const Offset &a, const Offset &b)
@@ -261,72 +314,15 @@ bool operator!=(const Extents &lhs, const Extents &rhs)
     return !(lhs == rhs);
 }
 
-ComponentTypeMask::ComponentTypeMask()
+bool ValidateComponentTypeMasks(unsigned long outputTypes,
+                                unsigned long inputTypes,
+                                unsigned long outputMask,
+                                unsigned long inputMask)
 {
-    mTypeMask.reset();
-}
-
-ComponentTypeMask::ComponentTypeMask(const ComponentTypeMask &other) = default;
-
-ComponentTypeMask::~ComponentTypeMask() = default;
-
-void ComponentTypeMask::reset()
-{
-    mTypeMask.reset();
-}
-
-bool ComponentTypeMask::none()
-{
-    return mTypeMask.none();
-}
-
-void ComponentTypeMask::setIndex(GLenum type, size_t index)
-{
-    ASSERT(index <= MAX_COMPONENT_TYPE_MASK_INDEX);
-
-    mTypeMask &= ~(0x10001 << index);
-
-    uint32_t m = 0;
-    switch (type)
-    {
-        case GL_INT:
-            m = 0x00001;
-            break;
-        case GL_UNSIGNED_INT:
-            m = 0x10000;
-            break;
-        case GL_FLOAT:
-            m = 0x10001;
-            break;
-        case GL_NONE:
-            m = 0x00000;
-            break;
-        default:
-            UNREACHABLE();
-    }
-
-    mTypeMask |= m << index;
-}
-
-unsigned long ComponentTypeMask::to_ulong() const
-{
-    return mTypeMask.to_ulong();
-}
-
-void ComponentTypeMask::from_ulong(unsigned long mask)
-{
-    mTypeMask = angle::BitSet<MAX_COMPONENT_TYPE_MASK_INDEX * 2>(mask);
-}
-
-bool ComponentTypeMask::Validate(unsigned long outputTypes,
-                                 unsigned long inputTypes,
-                                 unsigned long outputMask,
-                                 unsigned long inputMask)
-{
-    static_assert(IMPLEMENTATION_MAX_DRAW_BUFFERS <= MAX_COMPONENT_TYPE_MASK_INDEX,
+    static_assert(IMPLEMENTATION_MAX_DRAW_BUFFERS <= kMaxComponentTypeMaskIndex,
                   "Output/input masks should fit into 16 bits - 1 bit per draw buffer. The "
                   "corresponding type masks should fit into 32 bits - 2 bits per draw buffer.");
-    static_assert(MAX_VERTEX_ATTRIBS <= MAX_COMPONENT_TYPE_MASK_INDEX,
+    static_assert(MAX_VERTEX_ATTRIBS <= kMaxComponentTypeMaskIndex,
                   "Output/input masks should fit into 16 bits - 1 bit per attrib. The "
                   "corresponding type masks should fit into 32 bits - 2 bits per attrib.");
 
@@ -336,8 +332,8 @@ bool ComponentTypeMask::Validate(unsigned long outputTypes,
     // with the elswewhere used DrawBufferMask or AttributeMask.
 
     // OR the masks with themselves, shifted 16 bits. This is to match our split type bits.
-    outputMask |= (outputMask << MAX_COMPONENT_TYPE_MASK_INDEX);
-    inputMask |= (inputMask << MAX_COMPONENT_TYPE_MASK_INDEX);
+    outputMask |= (outputMask << kMaxComponentTypeMaskIndex);
+    inputMask |= (inputMask << kMaxComponentTypeMaskIndex);
 
     // To validate:
     // 1. Remove any indexes that are not enabled in the input (& inputMask)

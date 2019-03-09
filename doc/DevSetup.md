@@ -1,6 +1,6 @@
 # ANGLE Development
 
-ANGLE provides OpenGL ES 2.0 and EGL 1.4 libraries and dlls.  You can use these to build and run OpenGL ES 2.0 applications on Windows.
+ANGLE provides OpenGL ES 2.0 and EGL 1.4 libraries and dlls.  You can use these to build and run OpenGL ES 2.0 applications on Windows, Linux, Mac and Android.
 
 ## Development setup
 
@@ -10,7 +10,7 @@ ANGLE uses git for version control. If you are not familiar with git, helpful do
 ### Required Tools
 On all platforms:
 
- * GN is the supported build system.  GYP is deprecated and support will be removed in the future but [instructions are available](gyp.md).
+ * GN is the build system.  GYP support has been removed.
  * Clang will be set up by the build system and used by default.  See below for platform-specific compiler choices.
  * [depot_tools](http://dev.chromium.org/developers/how-tos/install-depot-tools)
    * Required to generate projects and build files, contribute patches, run the unit tests or build the shader compiler on non-Windows systems.
@@ -21,16 +21,16 @@ On Windows:
    * Put `is_clang = false` in your gn args to compile with the Microsoft Visual C++ compiler instead of clang.
    * See the [Chromium Windows build instructions](https://chromium.googlesource.com/chromium/src/+/master/docs/windows_build_instructions.md) for more info.
    * Required for the packaged Windows 10 SDK.
- * [Windows 10 Standalone SDK version 10.0.15063 exactly](https://developer.microsoft.com/en-us/windows/downloads/windows-10-sdk)
+ * [Windows 10 Standalone SDK version 10.0.17134 exactly](https://developer.microsoft.com/en-us/windows/downloads/windows-10-sdk).
    * Comes with additional features that aid development, such as the Debug runtime for D3D11. Required for the D3D Compiler DLL.
  * [Cygwin's Bison, flex, and patch](https://cygwin.com/setup-x86_64.exe) (optional)
    * This is only required if you need to modify GLSL ES grammar files (`glslang.l` and `glslang.y` under `src/compiler/translator`, or `ExpressionParser.y` and `Tokenizer.l` in `src/compiler/preprocessor`).
      Use the latest versions of bison, flex and patch from the 64-bit cygwin distribution.
- * Non-googlers need to set DEPOT_TOOLS_WIN_TOOLCHAIN environment variable to 0.
+ * **IMPORTANT**: Non-googlers need to set `DEPOT_TOOLS_WIN_TOOLCHAIN` environment variable to 0.
 
 On Linux:
 
- * Development packages for OpenGL, X11 and libpci (all of these dependencies should be installed automatically when running install-build-deps.sh later on).
+ * Development packages for OpenGL, X11 and libpci (all of these dependencies should be installed automatically when running `install-build-deps.sh` later on).
  * Bison and flex are not needed as we only support generating the translator grammar on Windows.
 
 On MacOS:
@@ -107,10 +107,10 @@ target_cpu = "arm64"          # Nexus 5X is 64 bit, remove this on 32 bit device
 target_os = "android"
 use_goma = true               # Remove this if you don't have goma
 ```
-Additional flags to build the Vulkan backend, enable only if running on Android N or higher:
+Additional flags to build the Vulkan backend, enable only if running on Android O or higher:
 ```
-android32_ndk_api_level = 24
-android64_ndk_api_level = 24
+android32_ndk_api_level = 26
+android64_ndk_api_level = 26
 ```
 
 These ANGLE targets are supported:
@@ -134,12 +134,13 @@ Also, follow [How to build ANGLE in Chromium for dev](BuildingAngleForChromiumDe
 ## Application Development with ANGLE
 This sections describes how to use ANGLE to build an OpenGL ES application.
 
-### Choosing a D3D Backend
-ANGLE can use either a backing renderer which uses D3D11 on systems where it is available, or a D3D9-only renderer.
+### Choosing a Backend
+ANGLE can use a variety of backing renderers based on platform.  On Windows, it defaults to D3D11 where it's available,
+or D3D9 otherwise.  On other desktop platforms, it defaults to GL.  On mobile, it defaults to GLES.
 
-ANGLE provides an EGL extension called `EGL_ANGLE_platform_angle` which allows uers to select which renderer to use at EGL initialization time by calling eglGetPlatformDisplayEXT with special enums. Details of the extension can be found in it's specification in `extensions/ANGLE_platform_angle.txt` and `extensions/ANGLE_platform_angle_d3d.txt` and examples of it's use can be seen in the ANGLE samples and tests, particularly `util/EGLWindow.cpp`.
+ANGLE provides an EGL extension called `EGL_ANGLE_platform_angle` which allows uers to select which renderer to use at EGL initialization time by calling eglGetPlatformDisplayEXT with special enums. Details of the extension can be found in it's specification in `extensions/ANGLE_platform_angle.txt` and `extensions/ANGLE_platform_angle_*.txt` and examples of it's use can be seen in the ANGLE samples and tests, particularly `util/EGLWindow.cpp`.
 
-By default, ANGLE will use a D3D11 renderer. To change the default:
+To change the default D3D backend:
 
  1. Open `src/libANGLE/renderer/d3d/DisplayD3D.cpp`
  2. Locate the definition of `ANGLE_DEFAULT_D3D11` near the head of the file, and set it to your preference.

@@ -8,9 +8,19 @@
 #include "test_utils/ANGLETest.h"
 
 #include "test_utils/gl_raii.h"
+#include "util/EGLWindow.h"
 
 namespace angle
 {
+constexpr char kSimpleTextureVertexShader[] =
+    "#version 300 es\n"
+    "in vec4 position;\n"
+    "out vec2 texcoord;\n"
+    "void main()\n"
+    "{\n"
+    "    gl_Position = position;\n"
+    "    texcoord = vec2(position.xy * 0.5 - 0.5);\n"
+    "}";
 
 // TODO(jmadill): Would be useful in a shared place in a utils folder.
 void UncompressDXTBlock(int destX,
@@ -41,12 +51,12 @@ void UncompressDXTBlock(int destX,
     };
     bool isDXT1 =
         (format == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) || (format == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT);
-    int colorOffset = srcOffset + (isDXT1 ? 0 : 8);
-    int color0      = make565(colorOffset + 0);
-    int color1      = make565(colorOffset + 2);
-    bool c0gtc1     = color0 > color1 || !isDXT1;
-    GLColor rgba0   = make8888From565(color0);
-    GLColor rgba1   = make8888From565(color1);
+    int colorOffset               = srcOffset + (isDXT1 ? 0 : 8);
+    int color0                    = make565(colorOffset + 0);
+    int color1                    = make565(colorOffset + 2);
+    bool c0gtc1                   = color0 > color1 || !isDXT1;
+    GLColor rgba0                 = make8888From565(color0);
+    GLColor rgba1                 = make8888From565(color1);
     std::array<GLColor, 4> colors = {{rgba0, rgba1,
                                       c0gtc1 ? mix(2, rgba0, rgba1, 3) : mix(1, rgba0, rgba1, 2),
                                       c0gtc1 ? mix(2, rgba1, rgba0, 3) : GLColor::black}};
@@ -248,16 +258,6 @@ class RobustResourceInitTest : public ANGLETest
                                              int skipHeight,
                                              const GLColor &skip);
 
-    const std::string kSimpleTextureVertexShader =
-        "#version 300 es\n"
-        "in vec4 position;\n"
-        "out vec2 texcoord;\n"
-        "void main()\n"
-        "{\n"
-        "    gl_Position = position;\n"
-        "    texcoord = vec2(position.xy * 0.5 - 0.5);\n"
-        "}";
-
     static std::string GetSimpleTextureFragmentShader(const char *samplerType)
     {
         std::stringstream fragmentStream;
@@ -296,6 +296,9 @@ class RobustResourceInitTestES3 : public RobustResourceInitTest
                                 GLenum internalFormatRGB,
                                 GLenum type);
 };
+
+class RobustResourceInitTestES31 : public RobustResourceInitTest
+{};
 
 // Robust resource initialization is not based on hardware support or native extensions, check that
 // it only works on the implemented renderers
@@ -339,7 +342,7 @@ TEST_P(RobustResourceInitTest, BufferData)
     glBufferData(GL_ARRAY_BUFFER, getWindowWidth() * getWindowHeight() * sizeof(GLfloat), nullptr,
                  GL_STATIC_DRAW);
 
-    const std::string &vertexShader =
+    constexpr char kVS[] =
         "attribute vec2 position;\n"
         "attribute float testValue;\n"
         "varying vec4 colorOut;\n"
@@ -347,13 +350,13 @@ TEST_P(RobustResourceInitTest, BufferData)
         "    gl_Position = vec4(position, 0, 1);\n"
         "    colorOut = testValue == 0.0 ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);\n"
         "}";
-    const std::string &fragmentShader =
+    constexpr char kFS[] =
         "varying mediump vec4 colorOut;\n"
         "void main() {\n"
         "    gl_FragColor = colorOut;\n"
         "}";
 
-    ANGLE_GL_PROGRAM(program, vertexShader, fragmentShader);
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
 
     GLint testValueLoc = glGetAttribLocation(program.get(), "testValue");
     ASSERT_NE(-1, testValueLoc);
@@ -701,14 +704,14 @@ TEST_P(RobustResourceInitTest, DrawWithTexture)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    const std::string &vertexShader =
+    constexpr char kVS[] =
         "attribute vec2 position;\n"
         "varying vec2 texCoord;\n"
         "void main() {\n"
         "    gl_Position = vec4(position, 0, 1);\n"
         "    texCoord = (position * 0.5) + 0.5;\n"
         "}";
-    const std::string &fragmentShader =
+    constexpr char kFS[] =
         "precision mediump float;\n"
         "varying vec2 texCoord;\n"
         "uniform sampler2D tex;\n"
@@ -716,7 +719,7 @@ TEST_P(RobustResourceInitTest, DrawWithTexture)
         "    gl_FragColor = texture2D(tex, texCoord);\n"
         "}";
 
-    ANGLE_GL_PROGRAM(program, vertexShader, fragmentShader);
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
     drawQuad(program, "position", 0.5f);
 
     checkFramebufferNonZeroPixels(0, 0, 0, 0, GLColor::black);
@@ -932,8 +935,9 @@ void RobustResourceInitTestES3::testIntegerTextureInit(const char *samplerType,
 {
     ANGLE_SKIP_TEST_IF(!hasGLExtension());
 
-    ANGLE_GL_PROGRAM(program, kSimpleTextureVertexShader,
-                     GetSimpleTextureFragmentShader(samplerType));
+    std::string fs = GetSimpleTextureFragmentShader(samplerType);
+
+    ANGLE_GL_PROGRAM(program, kSimpleTextureVertexShader, fs.c_str());
 
     // Make an RGBA framebuffer.
     GLTexture framebufferTexture;
@@ -1004,6 +1008,56 @@ TEST_P(RobustResourceInitTestES3, TextureInit_IntRGB32)
     testIntegerTextureInit<int32_t>("i", GL_RGBA32I, GL_RGB32I, GL_INT);
 }
 
+// Test that uninitialized image texture works well.
+TEST_P(RobustResourceInitTestES31, ImageTextureInit_R32UI)
+{
+    ANGLE_SKIP_TEST_IF(!hasGLExtension());
+    constexpr char kCS[] =
+        R"(#version 310 es
+        layout(local_size_x=1, local_size_y=1, local_size_z=1) in;
+        layout(r32ui, binding = 1) writeonly uniform highp uimage2D writeImage;
+        void main()
+        {
+            imageStore(writeImage, ivec2(gl_LocalInvocationID.xy), uvec4(200u));
+        })";
+
+    GLTexture texture;
+    // Don't upload data to texture.
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32UI, 1, 1);
+    EXPECT_GL_NO_ERROR();
+
+    ANGLE_GL_COMPUTE_PROGRAM(program, kCS);
+    glUseProgram(program.get());
+
+    glBindImageTexture(1, texture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32UI);
+
+    glDispatchCompute(1, 1, 1);
+    EXPECT_GL_NO_ERROR();
+
+    GLFramebuffer framebuffer;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+
+    GLuint outputValue;
+    glReadPixels(0, 0, 1, 1, GL_RED_INTEGER, GL_UNSIGNED_INT, &outputValue);
+    EXPECT_GL_NO_ERROR();
+
+    EXPECT_EQ(200u, outputValue);
+
+    outputValue = 0u;
+    // Write to another uninitialized texture.
+    GLTexture texture2;
+    glBindTexture(GL_TEXTURE_2D, texture2);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32UI, 1, 1);
+    EXPECT_GL_NO_ERROR();
+    glBindImageTexture(1, texture2, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32UI);
+    glDispatchCompute(1, 1, 1);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture2, 0);
+    glReadPixels(0, 0, 1, 1, GL_RED_INTEGER, GL_UNSIGNED_INT, &outputValue);
+    EXPECT_EQ(200u, outputValue);
+}
+
 // Basic test that renderbuffers are initialized correctly.
 TEST_P(RobustResourceInitTest, Renderbuffer)
 {
@@ -1035,7 +1089,8 @@ TEST_P(RobustResourceInitTestES3, GenerateMipmap)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    ANGLE_GL_PROGRAM(program, kSimpleTextureVertexShader, GetSimpleTextureFragmentShader(""));
+    std::string shader = GetSimpleTextureFragmentShader("");
+    ANGLE_GL_PROGRAM(program, kSimpleTextureVertexShader, shader.c_str());
 
     // Generate mipmaps and verify all the mips.
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -1137,8 +1192,7 @@ TEST_P(RobustResourceInitTestES3, BlitFramebufferOutOfBounds)
     {
         constexpr Test(const Region &read, const Region &draw, const Region &real)
             : readRegion(read), drawRegion(draw), realRegion(real)
-        {
-        }
+        {}
 
         Region readRegion;
         Region drawRegion;
@@ -1338,6 +1392,8 @@ TEST_P(RobustResourceInitTestES3, MaskedStencilClearBuffer)
     // http://anglebug.com/2408
     ANGLE_SKIP_TEST_IF(IsOSX() && IsOpenGL() && (IsIntel() || IsNVIDIA()));
 
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsOpenGL());
+
     // http://anglebug.com/2407
     ANGLE_SKIP_TEST_IF(IsAndroid());
 
@@ -1380,9 +1436,9 @@ TEST_P(RobustResourceInitTest, CopyTexSubImage2D)
     ANGLE_SKIP_TEST_IF(!hasGLExtension());
     ANGLE_SKIP_TEST_IF(IsD3D11_FL93());
 
-    constexpr int kDestSize = 4;
-    constexpr int kSrcSize  = kDestSize / 2;
-    constexpr int kOffset   = kSrcSize / 2;
+    static constexpr int kDestSize = 4;
+    constexpr int kSrcSize         = kDestSize / 2;
+    static constexpr int kOffset   = kSrcSize / 2;
 
     std::vector<GLColor> redColors(kDestSize * kDestSize, GLColor::red);
 
@@ -1412,7 +1468,7 @@ TEST_P(RobustResourceInitTest, CopyTexSubImage2D)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destTexture, 0);
     ASSERT_GL_NO_ERROR();
 
-    auto srcInitTest = [kOffset, kDestSize](int x, int y) {
+    auto srcInitTest = [](int x, int y) {
         return (x >= kOffset) && x < (kDestSize - kOffset) && (y >= kOffset) &&
                y < (kDestSize - kOffset);
     };
@@ -1447,9 +1503,9 @@ TEST_P(RobustResourceInitTestES3, CopyTexSubImage3D)
 {
     ANGLE_SKIP_TEST_IF(!hasGLExtension());
 
-    constexpr int kDestSize = 4;
-    constexpr int kSrcSize  = kDestSize / 2;
-    constexpr int kOffset   = kSrcSize / 2;
+    static constexpr int kDestSize = 4;
+    constexpr int kSrcSize         = kDestSize / 2;
+    static constexpr int kOffset   = kSrcSize / 2;
 
     std::vector<GLColor> redColors(kDestSize * kDestSize * kDestSize, GLColor::red);
 
@@ -1480,7 +1536,7 @@ TEST_P(RobustResourceInitTestES3, CopyTexSubImage3D)
     glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, destTexture, 0, 0);
     ASSERT_GL_NO_ERROR();
 
-    auto srcInitTest = [kOffset, kDestSize](int x, int y) {
+    auto srcInitTest = [](int x, int y) {
         return (x >= kOffset) && x < (kDestSize - kOffset) && (y >= kOffset) &&
                y < (kDestSize - kOffset);
     };
@@ -1663,7 +1719,10 @@ TEST_P(RobustResourceInitTest, SurfaceInitializedAfterSwap)
                                 EGL_SWAP_BEHAVIOR, &swapBehaviour));
 
     const std::array<GLColor, 4> clearColors = {{
-        GLColor::blue, GLColor::cyan, GLColor::red, GLColor::yellow,
+        GLColor::blue,
+        GLColor::cyan,
+        GLColor::red,
+        GLColor::yellow,
     }};
     for (size_t i = 0; i < clearColors.size(); i++)
     {
@@ -1685,6 +1744,83 @@ TEST_P(RobustResourceInitTest, SurfaceInitializedAfterSwap)
     }
 }
 
+// Test that multisampled 2D textures are initialized.
+TEST_P(RobustResourceInitTestES31, Multisample2DTexture)
+{
+    ANGLE_SKIP_TEST_IF(!hasGLExtension());
+
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, texture);
+    glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 2, GL_RGBA8, kWidth, kHeight, false);
+
+    GLFramebuffer framebuffer;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE,
+                           texture, 0);
+
+    GLTexture resolveTexture;
+    glBindTexture(GL_TEXTURE_2D, resolveTexture);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, kWidth, kHeight);
+
+    GLFramebuffer resolveFramebuffer;
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFramebuffer);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolveTexture,
+                           0);
+    ASSERT_GL_NO_ERROR();
+
+    glBlitFramebuffer(0, 0, kWidth, kHeight, 0, 0, kWidth, kHeight, GL_COLOR_BUFFER_BIT,
+                      GL_NEAREST);
+    ASSERT_GL_NO_ERROR();
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFramebuffer);
+    EXPECT_PIXEL_RECT_EQ(0, 0, kWidth, kHeight, GLColor::transparentBlack);
+}
+
+// Test that multisampled 2D texture arrays from OES_texture_storage_multisample_2d_array are
+// initialized.
+TEST_P(RobustResourceInitTestES31, Multisample2DTextureArray)
+{
+    ANGLE_SKIP_TEST_IF(!hasGLExtension());
+
+    if (extensionRequestable("GL_OES_texture_storage_multisample_2d_array"))
+    {
+        glRequestExtensionANGLE("GL_OES_texture_storage_multisample_2d_array");
+    }
+    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_OES_texture_storage_multisample_2d_array"));
+
+    const GLsizei kLayers = 4;
+
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE_ARRAY_OES, texture);
+    glTexStorage3DMultisampleOES(GL_TEXTURE_2D_MULTISAMPLE_ARRAY_OES, 2, GL_RGBA8, kWidth, kHeight,
+                                 kLayers, false);
+
+    GLTexture resolveTexture;
+    glBindTexture(GL_TEXTURE_2D, resolveTexture);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, kWidth, kHeight);
+
+    GLFramebuffer resolveFramebuffer;
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFramebuffer);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolveTexture,
+                           0);
+    ASSERT_GL_NO_ERROR();
+
+    for (GLsizei layerIndex = 0; layerIndex < kLayers; ++layerIndex)
+    {
+        GLFramebuffer framebuffer;
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+        glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texture, 0,
+                                  layerIndex);
+
+        glBlitFramebuffer(0, 0, kWidth, kHeight, 0, 0, kWidth, kHeight, GL_COLOR_BUFFER_BIT,
+                          GL_NEAREST);
+        ASSERT_GL_NO_ERROR();
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFramebuffer);
+        EXPECT_PIXEL_RECT_EQ(0, 0, kWidth, kHeight, GLColor::transparentBlack);
+    }
+}
+
 ANGLE_INSTANTIATE_TEST(RobustResourceInitTest,
                        ES2_D3D9(),
                        ES2_D3D11(),
@@ -1697,4 +1833,6 @@ ANGLE_INSTANTIATE_TEST(RobustResourceInitTest,
 
 ANGLE_INSTANTIATE_TEST(RobustResourceInitTestES3, ES3_D3D11(), ES3_OPENGL(), ES3_OPENGLES());
 
-}  // namespace
+ANGLE_INSTANTIATE_TEST(RobustResourceInitTestES31, ES31_OPENGL(), ES31_D3D11());
+
+}  // namespace angle

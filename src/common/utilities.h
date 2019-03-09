@@ -15,9 +15,12 @@
 #include <math.h>
 #include <string>
 #include <vector>
+
 #include "angle_gl.h"
 
+#include "common/PackedEnums.h"
 #include "common/mathutil.h"
+#include "common/platform.h"
 
 namespace sh
 {
@@ -36,6 +39,7 @@ int VariableRowCount(GLenum type);
 int VariableColumnCount(GLenum type);
 bool IsSamplerType(GLenum type);
 bool IsImageType(GLenum type);
+bool IsImage2DType(GLenum type);
 bool IsAtomicCounterType(GLenum type);
 bool IsOpaqueType(GLenum type);
 bool IsMatrixType(GLenum type);
@@ -62,15 +66,26 @@ const sh::ShaderVariable *FindShaderVarField(const sh::ShaderVariable &var,
 
 // Find the range of index values in the provided indices pointer.  Primitive restart indices are
 // only counted in the range if primitive restart is disabled.
-IndexRange ComputeIndexRange(GLenum indexType,
+IndexRange ComputeIndexRange(DrawElementsType indexType,
                              const GLvoid *indices,
                              size_t count,
                              bool primitiveRestartEnabled);
 
 // Get the primitive restart index value for the given index type.
-GLuint GetPrimitiveRestartIndex(GLenum indexType);
+GLuint GetPrimitiveRestartIndex(DrawElementsType indexType);
 
-bool IsTriangleMode(GLenum drawMode);
+bool IsTriangleMode(PrimitiveMode drawMode);
+
+namespace priv
+{
+extern const angle::PackedEnumMap<PrimitiveMode, bool> gLineModes;
+}  // namespace priv
+
+ANGLE_INLINE bool IsLineMode(PrimitiveMode primitiveMode)
+{
+    return priv::gLineModes[primitiveMode];
+}
+
 bool IsIntegerFormat(GLenum unsizedFormat);
 
 // Returns the product of the sizes in the vector, or 1 if the vector is empty. Doesn't currently
@@ -82,44 +97,41 @@ unsigned int ArraySizeProduct(const std::vector<unsigned int> &arraySizes);
 // GL_INVALID_INDEX and write the length of the original string.
 unsigned int ParseArrayIndex(const std::string &name, size_t *nameLengthWithoutArrayIndexOut);
 
+enum class SamplerFormat : uint8_t
+{
+    Float    = 0,
+    Unsigned = 1,
+    Signed   = 2,
+    Shadow   = 3,
+
+    InvalidEnum = 4,
+    EnumCount   = 4,
+};
+
 struct UniformTypeInfo final : angle::NonCopyable
 {
-    constexpr UniformTypeInfo(GLenum type,
-                              GLenum componentType,
-                              GLenum textureType,
-                              GLenum transposedMatrixType,
-                              GLenum boolVectorType,
-                              int rowCount,
-                              int columnCount,
-                              int componentCount,
-                              size_t componentSize,
-                              size_t internalSize,
-                              size_t externalSize,
-                              bool isSampler,
-                              bool isMatrixType,
-                              bool isImageType)
-        : type(type),
-          componentType(componentType),
-          textureType(textureType),
-          transposedMatrixType(transposedMatrixType),
-          boolVectorType(boolVectorType),
-          rowCount(rowCount),
-          columnCount(columnCount),
-          componentCount(componentCount),
-          componentSize(componentSize),
-          internalSize(internalSize),
-          externalSize(externalSize),
-          isSampler(isSampler),
-          isMatrixType(isMatrixType),
-          isImageType(isImageType)
-    {
-    }
+    inline constexpr UniformTypeInfo(GLenum type,
+                                     GLenum componentType,
+                                     GLenum textureType,
+                                     GLenum transposedMatrixType,
+                                     GLenum boolVectorType,
+                                     SamplerFormat samplerFormat,
+                                     int rowCount,
+                                     int columnCount,
+                                     int componentCount,
+                                     size_t componentSize,
+                                     size_t internalSize,
+                                     size_t externalSize,
+                                     bool isSampler,
+                                     bool isMatrixType,
+                                     bool isImageType);
 
     GLenum type;
     GLenum componentType;
     GLenum textureType;
     GLenum transposedMatrixType;
     GLenum boolVectorType;
+    SamplerFormat samplerFormat;
     int rowCount;
     int columnCount;
     int componentCount;
@@ -131,23 +143,62 @@ struct UniformTypeInfo final : angle::NonCopyable
     bool isImageType;
 };
 
+inline constexpr UniformTypeInfo::UniformTypeInfo(GLenum type,
+                                                  GLenum componentType,
+                                                  GLenum textureType,
+                                                  GLenum transposedMatrixType,
+                                                  GLenum boolVectorType,
+                                                  SamplerFormat samplerFormat,
+                                                  int rowCount,
+                                                  int columnCount,
+                                                  int componentCount,
+                                                  size_t componentSize,
+                                                  size_t internalSize,
+                                                  size_t externalSize,
+                                                  bool isSampler,
+                                                  bool isMatrixType,
+                                                  bool isImageType)
+    : type(type),
+      componentType(componentType),
+      textureType(textureType),
+      transposedMatrixType(transposedMatrixType),
+      boolVectorType(boolVectorType),
+      samplerFormat(samplerFormat),
+      rowCount(rowCount),
+      columnCount(columnCount),
+      componentCount(componentCount),
+      componentSize(componentSize),
+      internalSize(internalSize),
+      externalSize(externalSize),
+      isSampler(isSampler),
+      isMatrixType(isMatrixType),
+      isImageType(isImageType)
+{}
+
 const UniformTypeInfo &GetUniformTypeInfo(GLenum uniformType);
 
 const char *GetGenericErrorMessage(GLenum error);
 
 unsigned int ElementTypeSize(GLenum elementType);
 
+template <typename T>
+T GetClampedVertexCount(size_t vertexCount)
+{
+    static constexpr size_t kMax = static_cast<size_t>(std::numeric_limits<T>::max());
+    return static_cast<T>(vertexCount > kMax ? kMax : vertexCount);
+}
 }  // namespace gl
 
 namespace egl
 {
 static const EGLenum FirstCubeMapTextureTarget = EGL_GL_TEXTURE_CUBE_MAP_POSITIVE_X_KHR;
-static const EGLenum LastCubeMapTextureTarget = EGL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_KHR;
+static const EGLenum LastCubeMapTextureTarget  = EGL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_KHR;
 bool IsCubeMapTextureTarget(EGLenum target);
 size_t CubeMapTextureTargetToLayerIndex(EGLenum target);
 EGLenum LayerIndexToCubeMapTextureTarget(size_t index);
 bool IsTextureTarget(EGLenum target);
 bool IsRenderbufferTarget(EGLenum target);
+bool IsExternalImageTarget(EGLenum target);
 
 const char *GetGenericErrorMessage(EGLint error);
 }  // namespace egl
@@ -160,14 +211,15 @@ GLuint EGLClientBufferToGLObjectHandle(EGLClientBuffer buffer);
 namespace gl_egl
 {
 EGLenum GLComponentTypeToEGLColorComponentType(GLenum glComponentType);
+EGLClientBuffer GLObjectHandleToEGLClientBuffer(GLuint handle);
 }  // namespace gl_egl
 
 #if !defined(ANGLE_ENABLE_WINDOWS_STORE)
 std::string getTempPath();
-void writeFile(const char* path, const void* data, size_t size);
+void writeFile(const char *path, const void *data, size_t size);
 #endif
 
-#if defined (ANGLE_PLATFORM_WINDOWS)
+#if defined(ANGLE_PLATFORM_WINDOWS)
 void ScheduleYield();
 #endif
 

@@ -13,20 +13,42 @@
 
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/Format.h"
+#include "libANGLE/renderer/copyvertex.h"
 #include "libANGLE/renderer/renderer_utils.h"
+#include "platform/FeaturesVk.h"
 
 #include <array>
 
 namespace gl
 {
+struct SwizzleState;
 class TextureCapsMap;
 }  // namespace gl
 
 namespace rx
 {
+class RendererVk;
 
 namespace vk
 {
+// VkFormat values in range [0, kNumVkFormats) are used as indices in various tables.
+constexpr uint32_t kNumVkFormats = 185;
+
+struct TextureFormatInitInfo final
+{
+    angle::FormatID format;
+    VkFormat vkFormat;
+    InitializeTextureDataFunction initializer;
+};
+
+struct BufferFormatInitInfo final
+{
+    angle::FormatID format;
+    VkFormat vkFormat;
+    bool vkFormatIsPacked;
+    VertexCopyFunction vertexLoadFunction;
+    bool vertexLoadRequiresConversion;
+};
 
 struct Format final : private angle::NonCopyable
 {
@@ -35,18 +57,37 @@ struct Format final : private angle::NonCopyable
     bool valid() const { return internalFormat != 0; }
 
     // This is an auto-generated method in vk_format_table_autogen.cpp.
-    void initialize(VkPhysicalDevice physicalDevice, const angle::Format &angleFormat);
+    void initialize(RendererVk *renderer, const angle::Format &angleFormat);
 
-    const angle::Format &textureFormat() const;
-    const angle::Format &bufferFormat() const;
+    void initTextureFallback(RendererVk *renderer, const TextureFormatInitInfo *info, int numInfo);
+    void initBufferFallback(RendererVk *renderer, const BufferFormatInitInfo *info, int numInfo);
 
+    const angle::Format &angleFormat() const { return angle::Format::Get(angleFormatID); }
+    const angle::Format &textureFormat() const { return angle::Format::Get(textureFormatID); }
+    const angle::Format &bufferFormat() const { return angle::Format::Get(bufferFormatID); }
+
+    // Get buffer alignment for image-copy operations (to or from a buffer).
+    const gl::InternalFormat &getInternalFormatInfo(GLenum type) const
+    {
+        return gl::GetInternalFormatInfo(internalFormat, type);
+    }
+    size_t getImageCopyBufferAlignment() const;
+
+    angle::FormatID angleFormatID;
     GLenum internalFormat;
-    angle::Format::ID textureFormatID;
+    angle::FormatID textureFormatID;
     VkFormat vkTextureFormat;
-    angle::Format::ID bufferFormatID;
+    angle::FormatID bufferFormatID;
     VkFormat vkBufferFormat;
-    InitializeTextureDataFunction dataInitializerFunction;
-    LoadFunctionMap loadFunctions;
+    InitializeTextureDataFunction textureInitializerFunction;
+    LoadFunctionMap textureLoadFunctions;
+    VertexCopyFunction vertexLoadFunction;
+
+    bool vertexLoadRequiresConversion;
+    bool vkBufferFormatIsPacked;
+    bool vkSupportsStorageBuffer;
+    bool vkFormatIsInt;
+    bool vkFormatIsUnsigned;
 };
 
 bool operator==(const Format &lhs, const Format &rhs);
@@ -59,19 +100,25 @@ class FormatTable final : angle::NonCopyable
     ~FormatTable();
 
     // Also initializes the TextureCapsMap and the compressedTextureCaps in the Caps instance.
-    void initialize(VkPhysicalDevice physicalDevice,
+    void initialize(RendererVk *renderer,
                     gl::TextureCapsMap *outTextureCapsMap,
                     std::vector<GLenum> *outCompressedTextureFormats);
 
-    const Format &operator[](GLenum internalFormat) const;
+    ANGLE_INLINE const Format &operator[](GLenum internalFormat) const
+    {
+        angle::FormatID formatID = angle::Format::InternalFormatToID(internalFormat);
+        return mFormatData[static_cast<size_t>(formatID)];
+    }
+
+    ANGLE_INLINE const Format &operator[](angle::FormatID formatID) const
+    {
+        return mFormatData[static_cast<size_t>(formatID)];
+    }
 
   private:
-    // The table data is indexed by angle::Format::ID.
+    // The table data is indexed by angle::FormatID.
     std::array<Format, angle::kNumANGLEFormats> mFormatData;
 };
-
-// TODO(jmadill): This is temporary. Figure out how to handle format conversions.
-VkFormat GetNativeVertexFormat(gl::VertexFormatType vertexFormat);
 
 // This will return a reference to a VkFormatProperties with the feature flags supported
 // if the format is a mandatory format described in section 31.3.3. Required Format Support
@@ -79,10 +126,18 @@ VkFormat GetNativeVertexFormat(gl::VertexFormatType vertexFormat);
 // initialized to 0.
 const VkFormatProperties &GetMandatoryFormatSupport(VkFormat vkFormat);
 
-bool HasFullFormatSupport(VkPhysicalDevice physicalDevice, VkFormat vkFormat);
-
 }  // namespace vk
 
+// Checks if a vkFormat supports all the features needed to use it as a GL texture format
+bool HasFullTextureFormatSupport(RendererVk *renderer, VkFormat vkFormat);
+
+// Returns the alignment for a buffer to be used with the vertex input stage in Vulkan. This
+// calculation is listed in the Vulkan spec at the end of the section 'Vertex Input Description'.
+size_t GetVertexInputAlignment(const vk::Format &format);
+
+void MapSwizzleState(const vk::Format &format,
+                     const gl::SwizzleState &swizzleState,
+                     gl::SwizzleState *swizzleStateOut);
 }  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_VULKAN_VK_FORMAT_UTILS_H_

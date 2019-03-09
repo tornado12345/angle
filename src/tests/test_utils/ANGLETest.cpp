@@ -8,8 +8,19 @@
 //
 
 #include "ANGLETest.h"
-#include "EGLWindow.h"
-#include "OSWindow.h"
+
+#include "common/platform.h"
+#include "gpu_info_util/SystemInfo.h"
+#include "util/EGLWindow.h"
+#include "util/OSWindow.h"
+
+#if defined(ANGLE_USE_UTIL_LOADER) && defined(ANGLE_PLATFORM_WINDOWS)
+#    include "util/windows/WGLWindow.h"
+#endif  // defined(ANGLE_USE_UTIL_LOADER) && defined(ANGLE_PLATFORM_WINDOWS)
+
+#if defined(ANGLE_PLATFORM_WINDOWS)
+#    include <VersionHelpers.h>
+#endif  // defined(ANGLE_PLATFORM_WINDOWS)
 
 namespace angle
 {
@@ -42,7 +53,7 @@ GLubyte ColorDenorm(float colorValue)
     return static_cast<GLubyte>(colorValue * 255.0f);
 }
 
-void TestPlatform_logError(angle::PlatformMethods *platform, const char *errorMessage)
+void TestPlatform_logError(PlatformMethods *platform, const char *errorMessage)
 {
     auto *testPlatformContext = static_cast<TestPlatformContext *>(platform->context);
     if (testPlatformContext->ignoreMessages)
@@ -51,26 +62,32 @@ void TestPlatform_logError(angle::PlatformMethods *platform, const char *errorMe
     FAIL() << errorMessage;
 }
 
-void TestPlatform_logWarning(angle::PlatformMethods *platform, const char *warningMessage)
+void TestPlatform_logWarning(PlatformMethods *platform, const char *warningMessage)
 {
     auto *testPlatformContext = static_cast<TestPlatformContext *>(platform->context);
     if (testPlatformContext->ignoreMessages)
         return;
 
-    std::cerr << "Warning: " << warningMessage << std::endl;
+    if (testPlatformContext->warningsAsErrors)
+    {
+        FAIL() << warningMessage;
+    }
+    else
+    {
+        std::cerr << "Warning: " << warningMessage << std::endl;
+    }
 }
 
-void TestPlatform_logInfo(angle::PlatformMethods *platform, const char *infoMessage)
+void TestPlatform_logInfo(PlatformMethods *platform, const char *infoMessage)
 {
     auto *testPlatformContext = static_cast<TestPlatformContext *>(platform->context);
     if (testPlatformContext->ignoreMessages)
         return;
 
-    angle::WriteDebugMessage("%s\n", infoMessage);
+    WriteDebugMessage("%s\n", infoMessage);
 }
 
-void TestPlatform_overrideWorkaroundsD3D(angle::PlatformMethods *platform,
-                                         WorkaroundsD3D *workaroundsD3D)
+void TestPlatform_overrideWorkaroundsD3D(PlatformMethods *platform, WorkaroundsD3D *workaroundsD3D)
 {
     auto *testPlatformContext = static_cast<TestPlatformContext *>(platform->context);
     if (testPlatformContext->currentTest)
@@ -79,48 +96,102 @@ void TestPlatform_overrideWorkaroundsD3D(angle::PlatformMethods *platform,
     }
 }
 
-std::array<angle::Vector3, 4> GetIndexedQuadVertices()
+void TestPlatform_overrideFeaturesVk(PlatformMethods *platform, FeaturesVk *workaroundsVulkan)
 {
-    std::array<angle::Vector3, 4> vertices;
-    vertices[0] = angle::Vector3(-1.0f, 1.0f, 0.5f);
-    vertices[1] = angle::Vector3(-1.0f, -1.0f, 0.5f);
-    vertices[2] = angle::Vector3(1.0f, -1.0f, 0.5f);
-    vertices[3] = angle::Vector3(1.0f, 1.0f, 0.5f);
-    return vertices;
+    auto *testPlatformContext = static_cast<TestPlatformContext *>(platform->context);
+    if (testPlatformContext->currentTest)
+    {
+        testPlatformContext->currentTest->overrideFeaturesVk(workaroundsVulkan);
+    }
 }
 
-static constexpr std::array<GLushort, 6> IndexedQuadIndices = {{0, 1, 2, 0, 2, 3}};
+const std::array<Vector3, 6> kQuadVertices = {{
+    Vector3(-1.0f, 1.0f, 0.5f),
+    Vector3(-1.0f, -1.0f, 0.5f),
+    Vector3(1.0f, -1.0f, 0.5f),
+    Vector3(-1.0f, 1.0f, 0.5f),
+    Vector3(1.0f, -1.0f, 0.5f),
+    Vector3(1.0f, 1.0f, 0.5f),
+}};
 
+const std::array<Vector3, 4> kIndexedQuadVertices = {{
+    Vector3(-1.0f, 1.0f, 0.5f),
+    Vector3(-1.0f, -1.0f, 0.5f),
+    Vector3(1.0f, -1.0f, 0.5f),
+    Vector3(1.0f, 1.0f, 0.5f),
+}};
+
+constexpr std::array<GLushort, 6> kIndexedQuadIndices = {{0, 1, 2, 0, 2, 3}};
+
+const char *GetColorName(GLColor color)
+{
+    if (color == GLColor::red)
+    {
+        return "Red";
+    }
+
+    if (color == GLColor::green)
+    {
+        return "Green";
+    }
+
+    if (color == GLColor::blue)
+    {
+        return "Blue";
+    }
+
+    if (color == GLColor::white)
+    {
+        return "White";
+    }
+
+    if (color == GLColor::black)
+    {
+        return "Black";
+    }
+
+    if (color == GLColor::transparentBlack)
+    {
+        return "Transparent Black";
+    }
+
+    if (color == GLColor::yellow)
+    {
+        return "Yellow";
+    }
+
+    if (color == GLColor::magenta)
+    {
+        return "Magenta";
+    }
+
+    if (color == GLColor::cyan)
+    {
+        return "Cyan";
+    }
+
+    return nullptr;
+}
 }  // anonymous namespace
 
-GLColorRGB::GLColorRGB() : R(0), G(0), B(0)
-{
-}
+GLColorRGB::GLColorRGB() : R(0), G(0), B(0) {}
 
-GLColorRGB::GLColorRGB(GLubyte r, GLubyte g, GLubyte b) : R(r), G(g), B(b)
-{
-}
+GLColorRGB::GLColorRGB(GLubyte r, GLubyte g, GLubyte b) : R(r), G(g), B(b) {}
 
-GLColorRGB::GLColorRGB(const angle::Vector3 &floatColor)
+GLColorRGB::GLColorRGB(const Vector3 &floatColor)
     : R(ColorDenorm(floatColor.x())), G(ColorDenorm(floatColor.y())), B(ColorDenorm(floatColor.z()))
-{
-}
+{}
 
-GLColor::GLColor() : R(0), G(0), B(0), A(0)
-{
-}
+GLColor::GLColor() : R(0), G(0), B(0), A(0) {}
 
-GLColor::GLColor(GLubyte r, GLubyte g, GLubyte b, GLubyte a) : R(r), G(g), B(b), A(a)
-{
-}
+GLColor::GLColor(GLubyte r, GLubyte g, GLubyte b, GLubyte a) : R(r), G(g), B(b), A(a) {}
 
-GLColor::GLColor(const angle::Vector4 &floatColor)
+GLColor::GLColor(const Vector4 &floatColor)
     : R(ColorDenorm(floatColor.x())),
       G(ColorDenorm(floatColor.y())),
       B(ColorDenorm(floatColor.z())),
       A(ColorDenorm(floatColor.w()))
-{
-}
+{}
 
 GLColor::GLColor(GLuint colorValue) : R(0), G(0), B(0), A(0)
 {
@@ -152,9 +223,9 @@ void CreatePixelCenterWindowCoords(const std::vector<Vector2> &pixelPoints,
     }
 }
 
-angle::Vector4 GLColor::toNormalizedVector() const
+Vector4 GLColor::toNormalizedVector() const
 {
-    return angle::Vector4(ColorNorm(R), ColorNorm(G), ColorNorm(B), ColorNorm(A));
+    return Vector4(ColorNorm(R), ColorNorm(G), ColorNorm(B), ColorNorm(A));
 }
 
 GLColor ReadColor(GLint x, GLint y)
@@ -177,6 +248,12 @@ bool operator!=(const GLColor &a, const GLColor &b)
 
 std::ostream &operator<<(std::ostream &ostream, const GLColor &color)
 {
+    const char *colorName = GetColorName(color);
+    if (colorName)
+    {
+        return ostream << colorName;
+    }
+
     ostream << "(" << static_cast<unsigned int>(color.R) << ", "
             << static_cast<unsigned int>(color.G) << ", " << static_cast<unsigned int>(color.B)
             << ", " << static_cast<unsigned int>(color.A) << ")";
@@ -207,52 +284,80 @@ GLColor32F ReadColor32F(GLint x, GLint y)
 // static
 std::array<angle::Vector3, 6> ANGLETestBase::GetQuadVertices()
 {
-    std::array<angle::Vector3, 6> vertices;
-    vertices[0] = angle::Vector3(-1.0f, 1.0f, 0.5f);
-    vertices[1] = angle::Vector3(-1.0f, -1.0f, 0.5f);
-    vertices[2] = angle::Vector3(1.0f, -1.0f, 0.5f);
-    vertices[3] = angle::Vector3(-1.0f, 1.0f, 0.5f);
-    vertices[4] = angle::Vector3(1.0f, -1.0f, 0.5f);
-    vertices[5] = angle::Vector3(1.0f, 1.0f, 0.5f);
-    return vertices;
+    return angle::kQuadVertices;
 }
 
 // static
 std::array<GLushort, 6> ANGLETestBase::GetQuadIndices()
 {
-    return angle::IndexedQuadIndices;
+    return angle::kIndexedQuadIndices;
+}
+
+// static
+std::array<angle::Vector3, 4> ANGLETestBase::GetIndexedQuadVertices()
+{
+    return angle::kIndexedQuadVertices;
 }
 
 ANGLETestBase::ANGLETestBase(const angle::PlatformParameters &params)
     : mEGLWindow(nullptr),
+      mWGLWindow(nullptr),
       mWidth(16),
       mHeight(16),
       mIgnoreD3D11SDKLayersWarnings(false),
       mQuadVertexBuffer(0),
       mQuadIndexBuffer(0),
       m2DTexturedQuadProgram(0),
+      m3DTexturedQuadProgram(0),
       mDeferContextInit(false)
 {
-    mEGLWindow = new EGLWindow(params.majorVersion, params.minorVersion, params.eglParameters);
-
-    // Default debug layers to enabled in tests.
-    mEGLWindow->setDebugLayersEnabled(true);
-
-    // Workaround for NVIDIA not being able to share OpenGL and Vulkan contexts.
-    EGLint renderer      = params.getRenderer();
-    bool needsWindowSwap = mLastRendererType.valid() &&
-                           ((renderer != EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE) !=
-                            (mLastRendererType.value() != EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE));
-
-    if (needsWindowSwap)
+    switch (params.driver)
     {
-        DestroyTestWindow();
-        if (!InitTestWindow())
+        case angle::GLESDriverType::AngleEGL:
         {
-            std::cerr << "Failed to create ANGLE test window.";
+            mEGLWindow =
+                EGLWindow::New(params.majorVersion, params.minorVersion, params.eglParameters);
+
+            // Default debug layers to enabled in tests.
+            mEGLWindow->setDebugLayersEnabled(true);
+
+            // Workaround for NVIDIA not being able to share OpenGL and Vulkan contexts.
+            // Workaround if any of the GPUs is Nvidia, since we can't detect current GPU.
+            EGLint renderer = params.getRenderer();
+            bool needsWindowSwap =
+                hasNvidiaGPU() && mLastRendererType.valid() &&
+                ((renderer != EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE) !=
+                 (mLastRendererType.value() != EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE));
+
+            if (needsWindowSwap)
+            {
+                DestroyTestWindow();
+                if (!InitTestWindow())
+                {
+                    std::cerr << "Failed to create ANGLE test window.";
+                }
+            }
+
+            mLastRendererType = renderer;
+            break;
+        }
+
+        case angle::GLESDriverType::SystemEGL:
+        {
+            std::cerr << "Unsupported driver." << std::endl;
+            break;
+        }
+
+        case angle::GLESDriverType::SystemWGL:
+        {
+#if defined(ANGLE_USE_UTIL_LOADER) && defined(ANGLE_PLATFORM_WINDOWS)
+            mWGLWindow = WGLWindow::New(params.majorVersion, params.minorVersion);
+#else
+            std::cerr << "Unsupported driver." << std::endl;
+#endif  // defined(ANGLE_USE_UTIL_LOADER) && defined(ANGLE_PLATFORM_WINDOWS)
+            break;
         }
     }
-    mLastRendererType = renderer;
 }
 
 ANGLETestBase::~ANGLETestBase()
@@ -269,13 +374,22 @@ ANGLETestBase::~ANGLETestBase()
     {
         glDeleteProgram(m2DTexturedQuadProgram);
     }
-    SafeDelete(mEGLWindow);
+    if (m3DTexturedQuadProgram)
+    {
+        glDeleteProgram(m3DTexturedQuadProgram);
+    }
+    EGLWindow::Delete(&mEGLWindow);
+
+#if defined(ANGLE_USE_UTIL_LOADER) && defined(ANGLE_PLATFORM_WINDOWS)
+    WGLWindow::Delete(&mWGLWindow);
+#endif  // defined(ANGLE_USE_UTIL_LOADER) && defined(ANGLE_PLATFORM_WINDOWS)
 }
 
 void ANGLETestBase::ANGLETestSetUp()
 {
-    mPlatformContext.ignoreMessages = false;
-    mPlatformContext.currentTest    = this;
+    mPlatformContext.ignoreMessages   = false;
+    mPlatformContext.warningsAsErrors = false;
+    mPlatformContext.currentTest      = this;
 
     // Resize the window before creating the context so that the first make current
     // sets the viewport and scissor box to the right size.
@@ -289,21 +403,51 @@ void ANGLETestBase::ANGLETestSetUp()
         needSwap = true;
     }
 
-    mPlatformMethods.overrideWorkaroundsD3D = angle::TestPlatform_overrideWorkaroundsD3D;
-    mPlatformMethods.logError               = angle::TestPlatform_logError;
-    mPlatformMethods.logWarning             = angle::TestPlatform_logWarning;
-    mPlatformMethods.logInfo                = angle::TestPlatform_logInfo;
-    mPlatformMethods.context                = &mPlatformContext;
-    mEGLWindow->setPlatformMethods(&mPlatformMethods);
-
-    if (!mEGLWindow->initializeDisplayAndSurface(mOSWindow))
+    if (mWGLWindow)
     {
-        FAIL() << "egl display or surface init failed.";
+#if defined(ANGLE_PLATFORM_WINDOWS) && defined(ANGLE_USE_UTIL_LOADER)
+        if (!mWGLWindow->initializeGL(mOSWindow, ANGLETestEnvironment::GetWGLLibrary()))
+        {
+            std::cerr << "WGL init failed.. trying again with new OSWindow." << std::endl;
+
+            // Retry once with a fresh OSWindow. This is necessary to work around a bug in the
+            // NVIDIA WGL implementation. It seems sometimes the pixel format gets stuck. Using
+            // a new windows seems to allow us to set the new pixel format correctly.
+            DestroyTestWindow();
+            if (!InitTestWindow())
+            {
+                FAIL() << "Failed to create ANGLE test window.";
+            }
+
+            if (!mWGLWindow->initializeGL(mOSWindow, ANGLETestEnvironment::GetWGLLibrary()))
+            {
+                FAIL() << "WGL init failed.";
+            }
+        }
+#else
+        FAIL() << "Unsupported driver.";
+#endif  // defined(ANGLE_PLATFORM_WINDOWS) && defined(ANGLE_USE_UTIL_LOADER)
     }
-
-    if (!mDeferContextInit && !mEGLWindow->initializeContext())
+    else
     {
-        FAIL() << "GL Context init failed.";
+        mPlatformMethods.overrideWorkaroundsD3D = angle::TestPlatform_overrideWorkaroundsD3D;
+        mPlatformMethods.overrideFeaturesVk     = angle::TestPlatform_overrideFeaturesVk;
+        mPlatformMethods.logError               = angle::TestPlatform_logError;
+        mPlatformMethods.logWarning             = angle::TestPlatform_logWarning;
+        mPlatformMethods.logInfo                = angle::TestPlatform_logInfo;
+        mPlatformMethods.context                = &mPlatformContext;
+        mEGLWindow->setPlatformMethods(&mPlatformMethods);
+
+        if (!mEGLWindow->initializeDisplayAndSurface(mOSWindow,
+                                                     ANGLETestEnvironment::GetEGLLibrary()))
+        {
+            FAIL() << "egl display or surface init failed.";
+        }
+
+        if (!mDeferContextInit && !mEGLWindow->initializeContext())
+        {
+            FAIL() << "GL Context init failed.";
+        }
     }
 
     if (needSwap)
@@ -325,27 +469,22 @@ void ANGLETestBase::ANGLETestSetUp()
 
 void ANGLETestBase::ANGLETestTearDown()
 {
-    mEGLWindow->setPlatformMethods(nullptr);
+    if (mEGLWindow)
+    {
+        mEGLWindow->setPlatformMethods(nullptr);
+        checkD3D11SDKLayersMessages();
+    }
 
     mPlatformContext.currentTest = nullptr;
-    checkD3D11SDKLayersMessages();
 
     const auto &info = testing::UnitTest::GetInstance()->current_test_info();
     angle::WriteDebugMessage("Exiting %s.%s\n", info->test_case_name(), info->name());
 
     swapBuffers();
 
-    if (eglGetError() != EGL_SUCCESS)
-    {
-        FAIL() << "egl error during swap.";
-    }
-
     mOSWindow->messageLoop();
 
-    if (!destroyEGLContext())
-    {
-        FAIL() << "egl context destruction failed.";
-    }
+    getGLWindow()->destroyGL();
 
     // Check for quit message
     Event myEvent;
@@ -360,9 +499,14 @@ void ANGLETestBase::ANGLETestTearDown()
 
 void ANGLETestBase::swapBuffers()
 {
-    if (mEGLWindow->isGLInitialized())
+    if (getGLWindow()->isGLInitialized())
     {
-        mEGLWindow->swap();
+        getGLWindow()->swap();
+
+        if (mEGLWindow)
+        {
+            EXPECT_EGL_SUCCESS();
+        }
     }
 }
 
@@ -393,7 +537,7 @@ void ANGLETestBase::setupIndexedQuadVertexBuffer(GLfloat positionAttribZ,
         glGenBuffers(1, &mQuadVertexBuffer);
     }
 
-    auto quadVertices = angle::GetIndexedQuadVertices();
+    auto quadVertices = angle::kIndexedQuadVertices;
     for (angle::Vector3 &vertex : quadVertices)
     {
         vertex.x() *= positionAttribXYScale;
@@ -413,8 +557,8 @@ void ANGLETestBase::setupIndexedQuadIndexBuffer()
     }
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mQuadIndexBuffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(angle::IndexedQuadIndices),
-                 angle::IndexedQuadIndices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(angle::kIndexedQuadIndices),
+                 angle::kIndexedQuadIndices.data(), GL_STATIC_DRAW);
 }
 
 // static
@@ -475,6 +619,8 @@ void ANGLETestBase::drawQuad(GLuint program,
 
     GLint positionLocation = glGetAttribLocation(program, positionAttribName.c_str());
 
+    std::array<angle::Vector3, 6> quadVertices;
+
     if (useVertexBuffer)
     {
         setupQuadVertexBuffer(positionAttribZ, positionAttribXYScale);
@@ -483,7 +629,7 @@ void ANGLETestBase::drawQuad(GLuint program,
     }
     else
     {
-        auto quadVertices = GetQuadVertices();
+        quadVertices = GetQuadVertices();
         for (angle::Vector3 &vertex : quadVertices)
         {
             vertex.x() *= positionAttribXYScale;
@@ -583,7 +729,7 @@ void ANGLETestBase::drawIndexedQuad(GLuint program,
     }
     else
     {
-        indices = angle::IndexedQuadIndices.data();
+        indices = angle::kIndexedQuadIndices.data();
     }
 
     if (!restrictedRange)
@@ -616,7 +762,7 @@ GLuint ANGLETestBase::get2DTexturedQuadProgram()
         return m2DTexturedQuadProgram;
     }
 
-    const std::string &vs =
+    constexpr char kVS[] =
         "attribute vec2 position;\n"
         "varying mediump vec2 texCoord;\n"
         "void main()\n"
@@ -625,7 +771,7 @@ GLuint ANGLETestBase::get2DTexturedQuadProgram()
         "    texCoord = position * 0.5 + vec2(0.5);\n"
         "}\n";
 
-    const std::string &fs =
+    constexpr char kFS[] =
         "varying mediump vec2 texCoord;\n"
         "uniform sampler2D tex;\n"
         "void main()\n"
@@ -633,8 +779,42 @@ GLuint ANGLETestBase::get2DTexturedQuadProgram()
         "    gl_FragColor = texture2D(tex, texCoord);\n"
         "}\n";
 
-    m2DTexturedQuadProgram = CompileProgram(vs, fs);
+    m2DTexturedQuadProgram = CompileProgram(kVS, kFS);
     return m2DTexturedQuadProgram;
+}
+
+GLuint ANGLETestBase::get3DTexturedQuadProgram()
+{
+    if (m3DTexturedQuadProgram)
+    {
+        return m3DTexturedQuadProgram;
+    }
+
+    constexpr char kVS[] = R"(#version 300 es
+in vec2 position;
+out vec2 texCoord;
+void main()
+{
+    gl_Position = vec4(position, 0, 1);
+    texCoord = position * 0.5 + vec2(0.5);
+})";
+
+    constexpr char kFS[] = R"(#version 300 es
+precision highp float;
+
+in vec2 texCoord;
+out vec4 my_FragColor;
+
+uniform highp sampler3D tex;
+uniform float u_layer;
+
+void main()
+{
+    my_FragColor = texture(tex, vec3(texCoord, u_layer));
+})";
+
+    m3DTexturedQuadProgram = CompileProgram(kVS, kFS);
+    return m3DTexturedQuadProgram;
 }
 
 void ANGLETestBase::draw2DTexturedQuad(GLfloat positionAttribZ,
@@ -642,43 +822,31 @@ void ANGLETestBase::draw2DTexturedQuad(GLfloat positionAttribZ,
                                        bool useVertexBuffer)
 {
     ASSERT_NE(0u, get2DTexturedQuadProgram());
-    return drawQuad(get2DTexturedQuadProgram(), "position", positionAttribZ, positionAttribXYScale,
-                    useVertexBuffer);
+    drawQuad(get2DTexturedQuadProgram(), "position", positionAttribZ, positionAttribXYScale,
+             useVertexBuffer);
 }
 
-GLuint ANGLETestBase::compileShader(GLenum type, const std::string &source)
+void ANGLETestBase::draw3DTexturedQuad(GLfloat positionAttribZ,
+                                       GLfloat positionAttribXYScale,
+                                       bool useVertexBuffer,
+                                       float layer)
 {
-    GLuint shader = glCreateShader(type);
-
-    const char *sourceArray[1] = { source.c_str() };
-    glShaderSource(shader, 1, sourceArray, nullptr);
-    glCompileShader(shader);
-
-    GLint compileResult;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &compileResult);
-
-    if (compileResult == 0)
+    GLuint program = get3DTexturedQuadProgram();
+    ASSERT_NE(0u, program);
+    GLint activeProgram = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &activeProgram);
+    if (static_cast<GLuint>(activeProgram) != program)
     {
-        GLint infoLogLength;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLogLength);
-
-        if (infoLogLength == 0)
-        {
-            std::cerr << "shader compilation failed with empty log." << std::endl;
-        }
-        else
-        {
-            std::vector<GLchar> infoLog(infoLogLength);
-            glGetShaderInfoLog(shader, static_cast<GLsizei>(infoLog.size()), nullptr, &infoLog[0]);
-
-            std::cerr << "shader compilation failed: " << &infoLog[0] << std::endl;
-        }
-
-        glDeleteShader(shader);
-        shader = 0;
+        glUseProgram(program);
     }
+    glUniform1f(glGetUniformLocation(program, "u_layer"), layer);
 
-    return shader;
+    drawQuad(program, "position", positionAttribZ, positionAttribXYScale, useVertexBuffer);
+
+    if (static_cast<GLuint>(activeProgram) != program)
+    {
+        glUseProgram(static_cast<GLuint>(activeProgram));
+    }
 }
 
 void ANGLETestBase::checkD3D11SDKLayersMessages()
@@ -760,6 +928,18 @@ void ANGLETestBase::checkD3D11SDKLayersMessages()
 #endif  // defined(ANGLE_PLATFORM_WINDOWS)
 }
 
+bool ANGLETestBase::hasNvidiaGPU()
+{
+    for (const angle::GPUDeviceInfo &gpu : ANGLETestEnvironment::GetSystemInfo()->gpus)
+    {
+        if (angle::IsNvidia(gpu.vendorId))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool ANGLETestBase::extensionEnabled(const std::string &extName)
 {
     return CheckExtensionExists(reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS)),
@@ -770,6 +950,16 @@ bool ANGLETestBase::extensionRequestable(const std::string &extName)
 {
     return CheckExtensionExists(
         reinterpret_cast<const char *>(glGetString(GL_REQUESTABLE_EXTENSIONS_ANGLE)), extName);
+}
+
+bool ANGLETestBase::ensureExtensionEnabled(const std::string &extName)
+{
+    if (extensionEnabled("GL_ANGLE_request_extension") && extensionRequestable(extName))
+    {
+        glRequestExtensionANGLE(extName.c_str());
+    }
+
+    return extensionEnabled(extName);
 }
 
 bool ANGLETestBase::eglDisplayExtensionEnabled(EGLDisplay display, const std::string &extName)
@@ -800,34 +990,39 @@ void ANGLETestBase::setWindowHeight(int height)
     mHeight = height;
 }
 
+GLWindowBase *ANGLETestBase::getGLWindow() const
+{
+    return mWGLWindow ? reinterpret_cast<GLWindowBase *>(mWGLWindow) : mEGLWindow;
+}
+
 void ANGLETestBase::setConfigRedBits(int bits)
 {
-    mEGLWindow->setConfigRedBits(bits);
+    getGLWindow()->setConfigRedBits(bits);
 }
 
 void ANGLETestBase::setConfigGreenBits(int bits)
 {
-    mEGLWindow->setConfigGreenBits(bits);
+    getGLWindow()->setConfigGreenBits(bits);
 }
 
 void ANGLETestBase::setConfigBlueBits(int bits)
 {
-    mEGLWindow->setConfigBlueBits(bits);
+    getGLWindow()->setConfigBlueBits(bits);
 }
 
 void ANGLETestBase::setConfigAlphaBits(int bits)
 {
-    mEGLWindow->setConfigAlphaBits(bits);
+    getGLWindow()->setConfigAlphaBits(bits);
 }
 
 void ANGLETestBase::setConfigDepthBits(int bits)
 {
-    mEGLWindow->setConfigDepthBits(bits);
+    getGLWindow()->setConfigDepthBits(bits);
 }
 
 void ANGLETestBase::setConfigStencilBits(int bits)
 {
-    mEGLWindow->setConfigStencilBits(bits);
+    getGLWindow()->setConfigStencilBits(bits);
 }
 
 void ANGLETestBase::setConfigComponentType(EGLenum componentType)
@@ -895,6 +1090,11 @@ void ANGLETestBase::setContextProgramCacheEnabled(bool enabled)
     mEGLWindow->setContextProgramCacheEnabled(enabled);
 }
 
+void ANGLETestBase::setContextVirtualization(bool enabled)
+{
+    mEGLWindow->setContextVirtualization(enabled);
+}
+
 void ANGLETestBase::setDeferContextInit(bool enabled)
 {
     mDeferContextInit = enabled;
@@ -902,12 +1102,12 @@ void ANGLETestBase::setDeferContextInit(bool enabled)
 
 int ANGLETestBase::getClientMajorVersion() const
 {
-    return mEGLWindow->getClientMajorVersion();
+    return getGLWindow()->getClientMajorVersion();
 }
 
 int ANGLETestBase::getClientMinorVersion() const
 {
-    return mEGLWindow->getClientMinorVersion();
+    return getGLWindow()->getClientMinorVersion();
 }
 
 EGLWindow *ANGLETestBase::getEGLWindow() const
@@ -930,16 +1130,10 @@ bool ANGLETestBase::isMultisampleEnabled() const
     return mEGLWindow->isMultisample();
 }
 
-bool ANGLETestBase::destroyEGLContext()
-{
-    mEGLWindow->destroyGL();
-    return true;
-}
-
 // static
 bool ANGLETestBase::InitTestWindow()
 {
-    mOSWindow = CreateOSWindow();
+    mOSWindow = OSWindow::New();
     if (!mOSWindow->initialize("ANGLE_TEST", 128, 128))
     {
         return false;
@@ -956,8 +1150,7 @@ bool ANGLETestBase::DestroyTestWindow()
     if (mOSWindow)
     {
         mOSWindow->destroy();
-        delete mOSWindow;
-        mOSWindow = nullptr;
+        OSWindow::Delete(&mOSWindow);
     }
 
     return true;
@@ -968,9 +1161,7 @@ void ANGLETestBase::SetWindowVisible(bool isVisible)
     mOSWindow->setVisible(isVisible);
 }
 
-ANGLETest::ANGLETest() : ANGLETestBase(GetParam())
-{
-}
+ANGLETest::ANGLETest() : ANGLETestBase(GetParam()) {}
 
 void ANGLETest::SetUp()
 {
@@ -998,7 +1189,8 @@ bool IsAMD()
 {
     std::string rendererString(reinterpret_cast<const char *>(glGetString(GL_RENDERER)));
     return (rendererString.find("AMD") != std::string::npos) ||
-           (rendererString.find("ATI") != std::string::npos);
+           (rendererString.find("ATI") != std::string::npos) ||
+           (rendererString.find("Radeon") != std::string::npos);
 }
 
 bool IsNVIDIA()
@@ -1053,55 +1245,11 @@ bool IsNULL()
     return (rendererString.find("NULL") != std::string::npos);
 }
 
-bool IsAndroid()
-{
-#if defined(ANGLE_PLATFORM_ANDROID)
-    return true;
-#else
-    return false;
-#endif
-}
-
 bool IsVulkan()
 {
-    std::string rendererString(reinterpret_cast<const char *>(glGetString(GL_RENDERER)));
+    const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+    std::string rendererString(renderer);
     return (rendererString.find("Vulkan") != std::string::npos);
-}
-
-bool IsOzone()
-{
-#if defined(USE_OZONE)
-    return true;
-#else
-    return false;
-#endif
-}
-
-bool IsLinux()
-{
-#if defined(ANGLE_PLATFORM_LINUX)
-    return true;
-#else
-    return false;
-#endif
-}
-
-bool IsOSX()
-{
-#if defined(ANGLE_PLATFORM_APPLE)
-    return true;
-#else
-    return false;
-#endif
-}
-
-bool IsWindows()
-{
-#if defined(ANGLE_PLATFORM_WINDOWS)
-    return true;
-#else
-    return false;
-#endif
 }
 
 bool IsDebug()
@@ -1130,6 +1278,15 @@ void ANGLETestBase::ignoreD3D11SDKLayersWarnings()
     mIgnoreD3D11SDKLayersWarnings = true;
 }
 
+void ANGLETestBase::treatPlatformWarningsAsErrors()
+{
+#if defined(ANGLE_PLATFORM_WINDOWS)
+    // Only do warnings-as-errors on 8 and above. We may fall back to the old
+    // compiler DLL on Windows 7.
+    mPlatformContext.warningsAsErrors = IsWindows8OrGreater();
+#endif  // defined(ANGLE_PLATFORM_WINDOWS)
+}
+
 ANGLETestBase::ScopedIgnorePlatformMessages::ScopedIgnorePlatformMessages(ANGLETestBase *test)
     : mTest(test)
 {
@@ -1144,6 +1301,10 @@ ANGLETestBase::ScopedIgnorePlatformMessages::~ScopedIgnorePlatformMessages()
 OSWindow *ANGLETestBase::mOSWindow = nullptr;
 Optional<EGLint> ANGLETestBase::mLastRendererType;
 
+std::unique_ptr<angle::Library> ANGLETestEnvironment::gEGLLibrary;
+std::unique_ptr<angle::Library> ANGLETestEnvironment::gWGLLibrary;
+std::unique_ptr<angle::SystemInfo> ANGLETestEnvironment::gSystemInfo;
+
 void ANGLETestEnvironment::SetUp()
 {
     if (!ANGLETestBase::InitTestWindow())
@@ -1155,4 +1316,65 @@ void ANGLETestEnvironment::SetUp()
 void ANGLETestEnvironment::TearDown()
 {
     ANGLETestBase::DestroyTestWindow();
+}
+
+angle::Library *ANGLETestEnvironment::GetEGLLibrary()
+{
+#if defined(ANGLE_USE_UTIL_LOADER)
+    if (!gEGLLibrary)
+    {
+        gEGLLibrary.reset(angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME));
+    }
+#endif  // defined(ANGLE_USE_UTIL_LOADER)
+    return gEGLLibrary.get();
+}
+
+angle::Library *ANGLETestEnvironment::GetWGLLibrary()
+{
+#if defined(ANGLE_USE_UTIL_LOADER) && defined(ANGLE_PLATFORM_WINDOWS)
+    if (!gWGLLibrary)
+    {
+        gWGLLibrary.reset(angle::OpenSharedLibrary("opengl32"));
+    }
+#endif  // defined(ANGLE_USE_UTIL_LOADER) && defined(ANGLE_PLATFORM_WINDOWS)
+    return gWGLLibrary.get();
+}
+
+angle::SystemInfo *ANGLETestEnvironment::GetSystemInfo()
+{
+    if (!gSystemInfo)
+    {
+        gSystemInfo = std::make_unique<angle::SystemInfo>();
+        if (!angle::GetSystemInfo(gSystemInfo.get()))
+        {
+            std::cerr << "Failed to get system info." << std::endl;
+        }
+    }
+    return gSystemInfo.get();
+}
+
+void ANGLEProcessTestArgs(int *argc, char *argv[])
+{
+    testing::AddGlobalTestEnvironment(new ANGLETestEnvironment());
+}
+
+EGLTest::EGLTest() = default;
+
+EGLTest::~EGLTest() = default;
+
+void EGLTest::SetUp()
+{
+#if defined(ANGLE_USE_UTIL_LOADER)
+    PFNEGLGETPROCADDRESSPROC getProcAddress;
+    ANGLETestEnvironment::GetEGLLibrary()->getAs("eglGetProcAddress", &getProcAddress);
+    ASSERT_NE(nullptr, getProcAddress);
+
+    angle::LoadEGL(getProcAddress);
+    angle::LoadGLES(getProcAddress);
+#endif  // defined(ANGLE_USE_UTIL_LOADER)
+}
+
+bool IsDisplayExtensionEnabled(EGLDisplay display, const std::string &extName)
+{
+    return CheckExtensionExists(eglQueryString(display, EGL_EXTENSIONS), extName);
 }

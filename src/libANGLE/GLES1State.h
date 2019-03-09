@@ -14,6 +14,7 @@
 
 #include "common/FixedVector.h"
 #include "common/angleutils.h"
+#include "common/bitset_utils.h"
 #include "common/matrix_utils.h"
 #include "common/vector_utils.h"
 #include "libANGLE/Caps.h"
@@ -37,6 +38,8 @@ struct TextureCoordF
 
 struct MaterialParameters
 {
+    MaterialParameters();
+
     ColorF ambient;
     ColorF diffuse;
     ColorF specular;
@@ -46,12 +49,17 @@ struct MaterialParameters
 
 struct LightModelParameters
 {
+    LightModelParameters();
+
     ColorF color;
     bool twoSided;
 };
 
 struct LightParameters
 {
+    LightParameters();
+    LightParameters(const LightParameters &other);
+
     bool enabled                 = false;
     ColorF ambient               = {0.0f, 0.0f, 0.0f, 1.0f};
     ColorF diffuse               = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -67,6 +75,8 @@ struct LightParameters
 
 struct FogParameters
 {
+    FogParameters();
+
     FogMode mode;
     GLfloat density;
     GLfloat start;
@@ -76,29 +86,32 @@ struct FogParameters
 
 struct TextureEnvironmentParameters
 {
-    TextureEnvMode envMode      = TextureEnvMode::Modulate;
+    TextureEnvironmentParameters();
+    TextureEnvironmentParameters(const TextureEnvironmentParameters &other);
+
+    TextureEnvMode mode         = TextureEnvMode::Modulate;
     TextureCombine combineRgb   = TextureCombine::Modulate;
     TextureCombine combineAlpha = TextureCombine::Modulate;
 
-    TextureSrc src0rgb   = TextureSrc::Texture;
-    TextureSrc src0alpha = TextureSrc::Texture;
+    TextureSrc src0Rgb   = TextureSrc::Texture;
+    TextureSrc src0Alpha = TextureSrc::Texture;
 
-    TextureSrc src1rgb   = TextureSrc::Previous;
-    TextureSrc src1alpha = TextureSrc::Previous;
+    TextureSrc src1Rgb   = TextureSrc::Previous;
+    TextureSrc src1Alpha = TextureSrc::Previous;
 
-    TextureSrc src2rgb   = TextureSrc::Constant;
-    TextureSrc src2alpha = TextureSrc::Constant;
+    TextureSrc src2Rgb   = TextureSrc::Constant;
+    TextureSrc src2Alpha = TextureSrc::Constant;
 
-    TextureOp op0rgb   = TextureOp::SrcColor;
-    TextureOp op0alpha = TextureOp::SrcAlpha;
+    TextureOp op0Rgb   = TextureOp::SrcColor;
+    TextureOp op0Alpha = TextureOp::SrcAlpha;
 
-    TextureOp op1rgb   = TextureOp::SrcColor;
-    TextureOp op1alpha = TextureOp::SrcAlpha;
+    TextureOp op1Rgb   = TextureOp::SrcColor;
+    TextureOp op1Alpha = TextureOp::SrcAlpha;
 
-    TextureOp op2rgb   = TextureOp::SrcAlpha;
-    TextureOp op2alpha = TextureOp::SrcAlpha;
+    TextureOp op2Rgb   = TextureOp::SrcAlpha;
+    TextureOp op2Alpha = TextureOp::SrcAlpha;
 
-    ColorF envColor    = {0.0f, 0.0f, 0.0f, 0.0f};
+    ColorF color       = {0.0f, 0.0f, 0.0f, 0.0f};
     GLfloat rgbScale   = 1.0f;
     GLfloat alphaScale = 1.0f;
 
@@ -107,15 +120,30 @@ struct TextureEnvironmentParameters
 
 struct PointParameters
 {
-    GLfloat pointSizeMin;
-    GLfloat pointSizeMax;
-    GLfloat pointFadeThresholdSize;
-    angle::Vector3 pointDistanceAttenuation;
-    GLfloat pointSize;
+    PointParameters();
+    PointParameters(const PointParameters &other);
+
+    GLfloat pointSizeMin                    = 0.0f;
+    GLfloat pointSizeMax                    = 1.0f;
+    GLfloat pointFadeThresholdSize          = 1.0f;
+    angle::Vector3 pointDistanceAttenuation = {1.0f, 0.0f, 0.0f};
+    GLfloat pointSize                       = 1.0f;
+};
+
+struct ClipPlaneParameters
+{
+    ClipPlaneParameters();
+    ClipPlaneParameters(bool enabled, const angle::Vector4 &equation);
+    ClipPlaneParameters(const ClipPlaneParameters &other);
+
+    bool enabled;
+    angle::Vector4 equation;
 };
 
 class Context;
+class GLES1Renderer;
 class State;
+
 class GLES1State final : angle::NonCopyable
 {
   public:
@@ -140,6 +168,8 @@ class GLES1State final : angle::NonCopyable
     void setMatrixMode(MatrixType mode);
     MatrixType getMatrixMode() const;
 
+    GLint getCurrentMatrixStackDepth(GLenum param) const;
+
     void pushMatrix();
     void popMatrix();
 
@@ -147,18 +177,82 @@ class GLES1State final : angle::NonCopyable
     MatrixStack &currentMatrixStack();
     const MatrixStack &currentMatrixStack() const;
 
+    const angle::Mat4 &getModelviewMatrix() const;
+
     void loadMatrix(const angle::Mat4 &m);
     void multMatrix(const angle::Mat4 &m);
 
+    void setLogicOp(LogicalOperation opcodePacked);
+
     void setClientStateEnabled(ClientVertexArrayType clientState, bool enable);
+    void setTexCoordArrayEnabled(unsigned int unit, bool enable);
     bool isClientStateEnabled(ClientVertexArrayType clientState) const;
+    bool isTexCoordArrayEnabled(unsigned int unit) const;
     bool isTextureTargetEnabled(unsigned int unit, const TextureType type) const;
+
+    LightModelParameters &lightModelParameters();
+    const LightModelParameters &lightModelParameters() const;
+
+    LightParameters &lightParameters(unsigned int light);
+    const LightParameters &lightParameters(unsigned int light) const;
+
+    MaterialParameters &materialParameters();
+    const MaterialParameters &materialParameters() const;
+    bool isColorMaterialEnabled() const;
+
+    void setShadeModel(ShadingModel model);
+
+    void setClipPlane(unsigned int plane, const GLfloat *equation);
+    void getClipPlane(unsigned int plane, GLfloat *equation) const;
+
+    FogParameters &fogParameters();
+    const FogParameters &fogParameters() const;
+
+    TextureEnvironmentParameters &textureEnvironment(unsigned int unit);
+    const TextureEnvironmentParameters &textureEnvironment(unsigned int unit) const;
+
+    PointParameters &pointParameters();
+    const PointParameters &pointParameters() const;
+
+    AttributesMask getVertexArraysAttributeMask() const;
+
+    void setHint(GLenum target, GLenum mode);
+    GLenum getHint(GLenum target);
 
   private:
     friend class State;
+    friend class GLES1Renderer;
 
     // Back pointer for reading from State.
     const State *mGLState;
+
+    enum DirtyGles1Type
+    {
+        DIRTY_GLES1_TEXTURE_UNIT_ENABLE = 0,
+        DIRTY_GLES1_CLIENT_STATE_ENABLE,
+        DIRTY_GLES1_FEATURE_ENABLE,
+        DIRTY_GLES1_CURRENT_VECTOR,
+        DIRTY_GLES1_CLIENT_ACTIVE_TEXTURE,
+        DIRTY_GLES1_MATRICES,
+        DIRTY_GLES1_TEXTURE_ENVIRONMENT,
+        DIRTY_GLES1_MATERIAL,
+        DIRTY_GLES1_LIGHTS,
+        DIRTY_GLES1_FOG,
+        DIRTY_GLES1_SHADE_MODEL,
+        DIRTY_GLES1_POINT_PARAMETERS,
+        DIRTY_GLES1_ALPHA_TEST,
+        DIRTY_GLES1_LOGIC_OP,
+        DIRTY_GLES1_CLIP_PLANES,
+        DIRTY_GLES1_HINT_SETTING,
+        DIRTY_GLES1_MAX,
+    };
+    using DirtyBits = angle::BitSet<DIRTY_GLES1_MAX>;
+    DirtyBits mDirtyBits;
+
+    void setDirty(DirtyGles1Type type);
+    void setAllDirty();
+    void clearDirty();
+    bool isDirty(DirtyGles1Type type) const;
 
     // All initial state values come from the
     // OpenGL ES 1.1 spec.
@@ -172,7 +266,6 @@ class GLES1State final : angle::NonCopyable
     std::vector<bool> mTexCoordArrayEnabled;
 
     // Table 6.7-6.16 (IsEnabled)
-    std::vector<bool> mClipPlaneEnabled;
     bool mLineSmoothEnabled;
     bool mPointSmoothEnabled;
     bool mPointSpriteEnabled;
@@ -224,7 +317,7 @@ class GLES1State final : angle::NonCopyable
     LogicalOperation mLogicOp;
 
     // Table 6.7
-    std::vector<angle::Vector4> mClipPlanes;
+    std::vector<ClipPlaneParameters> mClipPlanes;
 
     // Table 6.19
     HintSetting mLineSmoothHint;

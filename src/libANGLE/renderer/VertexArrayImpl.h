@@ -32,21 +32,31 @@ class VertexArrayImpl : angle::NonCopyable
 {
   public:
     VertexArrayImpl(const gl::VertexArrayState &state) : mState(state) {}
-    virtual gl::Error syncState(const gl::Context *context,
-                                const gl::VertexArray::DirtyBits &dirtyBits,
-                                const gl::VertexArray::DirtyAttribBitsArray &attribBits,
-                                const gl::VertexArray::DirtyBindingBitsArray &bindingBits)
-    {
-        return gl::NoError();
-    }
+
+    // It's up to the implementation to reset the attrib and binding dirty bits.
+    // This is faster than the front-end having to clear all the bits after they have been scanned.
+    virtual angle::Result syncState(const gl::Context *context,
+                                    const gl::VertexArray::DirtyBits &dirtyBits,
+                                    gl::VertexArray::DirtyAttribBitsArray *attribBits,
+                                    gl::VertexArray::DirtyBindingBitsArray *bindingBits);
 
     virtual void destroy(const gl::Context *context) {}
     virtual ~VertexArrayImpl() {}
+
+    const gl::VertexArrayState &getState() const { return mState; }
 
   protected:
     const gl::VertexArrayState &mState;
 };
 
+inline angle::Result VertexArrayImpl::syncState(const gl::Context *context,
+                                                const gl::VertexArray::DirtyBits &dirtyBits,
+                                                gl::VertexArray::DirtyAttribBitsArray *attribBits,
+                                                gl::VertexArray::DirtyBindingBitsArray *bindingBits)
+{
+    return angle::Result::Continue;
+}
+
 }  // namespace rx
 
-#endif // LIBANGLE_RENDERER_VERTEXARRAYIMPL_H_
+#endif  // LIBANGLE_RENDERER_VERTEXARRAYIMPL_H_

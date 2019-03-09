@@ -19,10 +19,10 @@ class TSymbol;
 class TSymbolUniqueId
 {
   public:
-    POOL_ALLOCATOR_NEW_DELETE();
+    POOL_ALLOCATOR_NEW_DELETE
     explicit TSymbolUniqueId(const TSymbol &symbol);
     constexpr TSymbolUniqueId(const TSymbolUniqueId &) = default;
-    TSymbolUniqueId &operator=(const TSymbolUniqueId &);
+    TSymbolUniqueId &operator                          =(const TSymbolUniqueId &);
     bool operator==(const TSymbolUniqueId &) const;
 
     constexpr int get() const { return mId; }
@@ -35,6 +35,22 @@ class TSymbolUniqueId
     constexpr TSymbolUniqueId(int staticId) : mId(staticId) {}
 
     int mId;
+};
+
+enum class SymbolType
+{
+    BuiltIn,
+    UserDefined,
+    AngleInternal,
+    Empty  // Meaning symbol without a name.
+};
+
+enum class SymbolClass
+{
+    Function,
+    Variable,
+    Struct,
+    InterfaceBlock
 };
 
 }  // namespace sh

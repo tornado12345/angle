@@ -27,7 +27,10 @@ class OffscreenSurfaceVk : public SurfaceImpl
     ~OffscreenSurfaceVk() override;
 
     egl::Error initialize(const egl::Display *display) override;
-    FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
+    void destroy(const egl::Display *display) override;
+
+    FramebufferImpl *createDefaultFramebuffer(const gl::Context *context,
+                                              const gl::FramebufferState &state) override;
     egl::Error swap(const gl::Context *context) override;
     egl::Error postSubBuffer(const gl::Context *context,
                              EGLint x,
@@ -49,20 +52,43 @@ class OffscreenSurfaceVk : public SurfaceImpl
     EGLint isPostSubBufferSupported() const override;
     EGLint getSwapBehavior() const override;
 
-    gl::Error getAttachmentRenderTarget(const gl::Context *context,
-                                        GLenum binding,
-                                        const gl::ImageIndex &imageIndex,
-                                        FramebufferAttachmentRenderTarget **rtOut) override;
+    angle::Result getAttachmentRenderTarget(const gl::Context *context,
+                                            GLenum binding,
+                                            const gl::ImageIndex &imageIndex,
+                                            FramebufferAttachmentRenderTarget **rtOut) override;
 
-    gl::Error initializeContents(const gl::Context *context,
-                                 const gl::ImageIndex &imageIndex) override;
+    angle::Result initializeContents(const gl::Context *context,
+                                     const gl::ImageIndex &imageIndex) override;
+
+    vk::ImageHelper *getColorAttachmentImage();
 
   private:
+    struct AttachmentImage final : angle::NonCopyable
+    {
+        AttachmentImage();
+        ~AttachmentImage();
+
+        angle::Result initialize(DisplayVk *displayVk,
+                                 EGLint width,
+                                 EGLint height,
+                                 const vk::Format &vkFormat);
+        void destroy(const egl::Display *display);
+
+        vk::ImageHelper image;
+        vk::ImageView imageView;
+        RenderTargetVk renderTarget;
+    };
+
+    angle::Result initializeImpl(DisplayVk *displayVk);
+
     EGLint mWidth;
     EGLint mHeight;
+
+    AttachmentImage mColorAttachment;
+    AttachmentImage mDepthStencilAttachment;
 };
 
-class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
+class WindowSurfaceVk : public SurfaceImpl
 {
   public:
     WindowSurfaceVk(const egl::SurfaceState &surfaceState,
@@ -74,8 +100,10 @@ class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
     void destroy(const egl::Display *display) override;
 
     egl::Error initialize(const egl::Display *display) override;
-    FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
+    FramebufferImpl *createDefaultFramebuffer(const gl::Context *context,
+                                              const gl::FramebufferState &state) override;
     egl::Error swap(const gl::Context *context) override;
+    egl::Error swapWithDamage(const gl::Context *context, EGLint *rects, EGLint n_rects) override;
     egl::Error postSubBuffer(const gl::Context *context,
                              EGLint x,
                              EGLint y,
@@ -96,17 +124,17 @@ class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
     EGLint isPostSubBufferSupported() const override;
     EGLint getSwapBehavior() const override;
 
-    gl::Error getAttachmentRenderTarget(const gl::Context *context,
-                                        GLenum binding,
-                                        const gl::ImageIndex &imageIndex,
-                                        FramebufferAttachmentRenderTarget **rtOut) override;
+    angle::Result getAttachmentRenderTarget(const gl::Context *context,
+                                            GLenum binding,
+                                            const gl::ImageIndex &imageIndex,
+                                            FramebufferAttachmentRenderTarget **rtOut) override;
 
-    gl::Error initializeContents(const gl::Context *context,
-                                 const gl::ImageIndex &imageIndex) override;
+    angle::Result initializeContents(const gl::Context *context,
+                                     const gl::ImageIndex &imageIndex) override;
 
-    gl::ErrorOrResult<vk::Framebuffer *> getCurrentFramebuffer(
-        VkDevice device,
-        const vk::RenderPass &compatibleRenderPass);
+    angle::Result getCurrentFramebuffer(vk::Context *context,
+                                        const vk::RenderPass &compatibleRenderPass,
+                                        vk::Framebuffer **framebufferOut);
 
   protected:
     EGLNativeWindowType mNativeWindowType;
@@ -114,23 +142,40 @@ class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
     VkInstance mInstance;
 
   private:
-    virtual vk::ErrorOrResult<gl::Extents> createSurfaceVk(RendererVk *renderer) = 0;
-    vk::Error initializeImpl(RendererVk *renderer);
-    vk::Error nextSwapchainImage(RendererVk *renderer);
+    virtual angle::Result createSurfaceVk(vk::Context *context, gl::Extents *extentsOut) = 0;
+    virtual angle::Result getCurrentWindowSize(vk::Context *context, gl::Extents *extentsOut) = 0;
+
+    angle::Result initializeImpl(DisplayVk *displayVk);
+    angle::Result recreateSwapchain(DisplayVk *displayVk,
+                                    const gl::Extents &extents,
+                                    uint32_t swapHistoryIndex);
+    angle::Result checkForOutOfDateSwapchain(DisplayVk *displayVk,
+                                             uint32_t swapHistoryIndex,
+                                             bool presentOutOfDate);
+    void releaseSwapchainImages(RendererVk *renderer);
+    angle::Result nextSwapchainImage(DisplayVk *displayVk);
+    angle::Result present(DisplayVk *displayVk,
+                          EGLint *rects,
+                          EGLint n_rects,
+                          bool &swapchainOutOfDate);
+    angle::Result swapImpl(DisplayVk *displayVk, EGLint *rects, EGLint n_rects);
+    angle::Result resizeSwapHistory(DisplayVk *displayVk, size_t imageCount);
+
+    VkSurfaceCapabilitiesKHR mSurfaceCaps;
+    std::vector<VkPresentModeKHR> mPresentModes;
 
     VkSwapchainKHR mSwapchain;
+    // Cached information used to recreate swapchains.
+    VkPresentModeKHR mSwapchainPresentMode;         // Current swapchain mode
+    VkPresentModeKHR mDesiredSwapchainPresentMode;  // Desired mode set through setSwapInterval()
+    uint32_t mMinImageCount;
+    VkSurfaceTransformFlagBitsKHR mPreTransform;
+    VkCompositeAlphaFlagBitsKHR mCompositeAlpha;
 
     RenderTargetVk mColorRenderTarget;
     RenderTargetVk mDepthStencilRenderTarget;
 
     uint32_t mCurrentSwapchainImageIndex;
-
-    // When acquiring a new image for rendering, we keep a 'spare' semaphore. We pass this extra
-    // semaphore to VkAcquireNextImage, then hand it to the next available SwapchainImage when
-    // the command completes. We then make the old semaphore in the new SwapchainImage the spare
-    // semaphore, since we know the image is no longer using it. This avoids the chicken and egg
-    // problem with needing to know the next available image index before we acquire it.
-    vk::Semaphore mAcquireNextImageSemaphore;
 
     struct SwapchainImage : angle::NonCopyable
     {
@@ -141,11 +186,20 @@ class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
         vk::ImageHelper image;
         vk::ImageView imageView;
         vk::Framebuffer framebuffer;
-        vk::Semaphore imageAcquiredSemaphore;
-        vk::Semaphore commandsCompleteSemaphore;
     };
 
     std::vector<SwapchainImage> mSwapchainImages;
+
+    // A circular buffer, with the same size as mSwapchainImages (N), that stores the serial of the
+    // renderer on every swap.  The CPU is throttled by waiting for the Nth previous serial to
+    // finish.  Old swapchains are scheduled to be destroyed at the same time.
+    struct SwapHistory
+    {
+        Serial serial;
+        VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    };
+    std::vector<SwapHistory> mSwapHistory;
+    size_t mCurrentSwapHistoryIndex;
 
     vk::ImageHelper mDepthStencilImage;
     vk::ImageView mDepthStencilImageView;
