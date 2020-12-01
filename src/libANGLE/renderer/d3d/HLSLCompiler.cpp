@@ -14,7 +14,7 @@
 #include "libANGLE/features.h"
 #include "libANGLE/histogram_macros.h"
 #include "libANGLE/renderer/d3d/ContextD3D.h"
-#include "third_party/trace_event/trace_event.h"
+#include "libANGLE/trace.h"
 
 namespace
 {
@@ -120,8 +120,8 @@ angle::Result HLSLCompiler::ensureInitialized(d3d::Context *context)
         return angle::Result::Continue;
     }
 
-    TRACE_EVENT0("gpu.angle", "HLSLCompiler::initialize");
-#if !defined(ANGLE_ENABLE_WINDOWS_STORE)
+    ANGLE_TRACE_EVENT0("gpu.angle", "HLSLCompiler::initialize");
+#if !defined(ANGLE_ENABLE_WINDOWS_UWP)
 #    if defined(ANGLE_PRELOADED_D3DCOMPILER_MODULE_NAMES)
     // Find a D3DCompiler module that had already been loaded based on a predefined list of
     // versions.
@@ -214,20 +214,17 @@ angle::Result HLSLCompiler::compileToBinary(d3d::Context *context,
 {
     ASSERT(mInitialized);
 
-#if !defined(ANGLE_ENABLE_WINDOWS_STORE)
+#if !defined(ANGLE_ENABLE_WINDOWS_UWP)
     ASSERT(mD3DCompilerModule);
 #endif
     ASSERT(mD3DCompileFunc);
 
-#if !defined(ANGLE_ENABLE_WINDOWS_STORE)
-    if (gl::DebugAnnotationsActive())
-    {
-        std::string sourcePath = getTempPath();
-        std::ostringstream stream;
-        stream << "#line 2 \"" << sourcePath << "\"\n\n" << hlsl;
-        std::string sourceText = stream.str();
-        writeFile(sourcePath.c_str(), sourceText.c_str(), sourceText.size());
-    }
+#if !defined(ANGLE_ENABLE_WINDOWS_UWP) && defined(ANGLE_ENABLE_DEBUG_TRACE)
+    std::string sourcePath = getTempPath();
+    std::ostringstream stream;
+    stream << "#line 2 \"" << sourcePath << "\"\n\n" << hlsl;
+    std::string sourceText = stream.str();
+    writeFile(sourcePath.c_str(), sourceText.c_str(), sourceText.size());
 #endif
 
     const D3D_SHADER_MACRO *macros = overrideMacros ? overrideMacros : nullptr;
@@ -239,7 +236,7 @@ angle::Result HLSLCompiler::compileToBinary(d3d::Context *context,
         HRESULT result         = S_OK;
 
         {
-            TRACE_EVENT0("gpu.angle", "D3DCompile");
+            ANGLE_TRACE_EVENT1("gpu.angle", "D3DCompile", "source", hlsl);
             SCOPED_ANGLE_HISTOGRAM_TIMER("GPU.ANGLE.D3DCompileMS");
             result = mD3DCompileFunc(hlsl.c_str(), hlsl.length(), gl::g_fakepath, macros, nullptr,
                                      "main", profile.c_str(), configs[i].flags, 0, &binary,
@@ -250,6 +247,7 @@ angle::Result HLSLCompiler::compileToBinary(d3d::Context *context,
         {
             std::string message = static_cast<const char *>(errorMessage->GetBufferPointer());
             SafeRelease(errorMessage);
+            ANGLE_TRACE_EVENT1("gpu.angle", "D3DCompile::Error", "error", errorMessage);
 
             infoLog.appendSanitized(message.c_str());
 
@@ -258,22 +256,43 @@ angle::Result HLSLCompiler::compileToBinary(d3d::Context *context,
 
             WARN() << std::endl << message;
 
-            if ((message.find("error X3531:") !=
-                     std::string::npos ||  // "can't unroll loops marked with loop attribute"
-                 message.find("error X4014:") !=
-                     std::string::npos) &&  // "cannot have gradient operations inside loops with
-                                            // divergent flow control", even though it is
-                                            // counter-intuitive to disable unrolling for this
-                                            // error, some very long shaders have trouble deciding
-                                            // which loops to unroll and turning off forced unrolls
-                                            // allows them to compile properly.
-                macros != nullptr)
+            if (macros != nullptr)
             {
-                macros = nullptr;  // Disable [loop] and [flatten]
+                constexpr const char *kLoopRelatedErrors[] = {
+                    // "can't unroll loops marked with loop attribute"
+                    "error X3531:",
 
-                // Retry without changing compiler flags
-                i--;
-                continue;
+                    // "cannot have gradient operations inside loops with divergent flow control",
+                    // even though it is counter-intuitive to disable unrolling for this error, some
+                    // very long shaders have trouble deciding which loops to unroll and turning off
+                    // forced unrolls allows them to compile properly.
+                    "error X4014:",
+
+                    // "array index out of bounds", loop unrolling can result in invalid array
+                    // access if the indices become constant, causing loops that may never be
+                    // executed to generate compilation errors
+                    "error X3504:",
+                };
+
+                bool hasLoopRelatedError = false;
+                for (const char *errorType : kLoopRelatedErrors)
+                {
+                    if (message.find(errorType) != std::string::npos)
+                    {
+                        hasLoopRelatedError = true;
+                        break;
+                    }
+                }
+
+                if (hasLoopRelatedError)
+                {
+                    // Disable [loop] and [flatten]
+                    macros = nullptr;
+
+                    // Retry without changing compiler flags
+                    i--;
+                    continue;
+                }
             }
         }
 

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2014 The ANGLE Project Authors. All rights reserved.
+// Copyright 2014 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -8,6 +8,7 @@
 #define SAMPLE_UTIL_TGA_UTILS_HPP
 
 #include <array>
+#include <string>
 #include <vector>
 
 #include "util/gles_loader_autogen.h"

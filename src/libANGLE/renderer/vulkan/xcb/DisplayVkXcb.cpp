@@ -9,8 +9,11 @@
 
 #include "libANGLE/renderer/vulkan/xcb/DisplayVkXcb.h"
 
+#include <X11/Xutil.h>
 #include <xcb/xcb.h>
 
+#include "common/system_utils.h"
+#include "libANGLE/Display.h"
 #include "libANGLE/renderer/vulkan/vk_caps_utils.h"
 #include "libANGLE/renderer/vulkan/xcb/WindowSurfaceVkXcb.h"
 
@@ -65,8 +68,9 @@ bool DisplayVkXcb::isValidNativeWindow(EGLNativeWindowType window) const
 {
     // There doesn't appear to be an xcb function explicitly for checking the validity of a
     // window ID, but xcb_query_tree_reply will return nullptr if the window doesn't exist.
-    xcb_query_tree_cookie_t cookie = xcb_query_tree(mXcbConnection, window);
-    xcb_query_tree_reply_t *reply  = xcb_query_tree_reply(mXcbConnection, cookie, nullptr);
+    xcb_query_tree_cookie_t cookie =
+        xcb_query_tree(mXcbConnection, static_cast<xcb_window_t>(window));
+    xcb_query_tree_reply_t *reply = xcb_query_tree_reply(mXcbConnection, cookie, nullptr);
     if (reply)
     {
         free(reply);
@@ -76,23 +80,38 @@ bool DisplayVkXcb::isValidNativeWindow(EGLNativeWindowType window) const
 }
 
 SurfaceImpl *DisplayVkXcb::createWindowSurfaceVk(const egl::SurfaceState &state,
-                                                 EGLNativeWindowType window,
-                                                 EGLint width,
-                                                 EGLint height)
+                                                 EGLNativeWindowType window)
 {
-    return new WindowSurfaceVkXcb(state, window, width, height, mXcbConnection);
+    return new WindowSurfaceVkXcb(state, window, mXcbConnection);
 }
 
 egl::ConfigSet DisplayVkXcb::generateConfigs()
 {
-    constexpr GLenum kColorFormats[] = {GL_BGRA8_EXT, GL_BGRX8_ANGLEX};
-    constexpr EGLint kSampleCounts[] = {0};
-    return egl_vk::GenerateConfigs(kColorFormats, egl_vk::kConfigDepthStencilFormats, kSampleCounts,
-                                   this);
+    const std::array<GLenum, 1> kColorFormats = {GL_BGRA8_EXT};
+
+    std::vector<GLenum> depthStencilFormats(
+        egl_vk::kConfigDepthStencilFormats,
+        egl_vk::kConfigDepthStencilFormats + ArraySize(egl_vk::kConfigDepthStencilFormats));
+
+    if (getCaps().stencil8)
+    {
+        depthStencilFormats.push_back(GL_STENCIL_INDEX8);
+    }
+    return egl_vk::GenerateConfigs(kColorFormats.data(), kColorFormats.size(),
+                                   depthStencilFormats.data(), depthStencilFormats.size(), this);
 }
 
-bool DisplayVkXcb::checkConfigSupport(egl::Config *config)
+void DisplayVkXcb::checkConfigSupport(egl::Config *config)
 {
+    // If no window system, cannot support windows.
+    static bool sNoX11Display = angle::GetEnvironmentVar("DISPLAY").empty();
+    if (sNoX11Display)
+    {
+        // No window support if no X11.
+        config->surfaceType &= ~EGL_WINDOW_BIT;
+        return;
+    }
+
     // TODO(geofflang): Test for native support and modify the config accordingly.
     // http://anglebug.com/2692
 
@@ -106,8 +125,6 @@ bool DisplayVkXcb::checkConfigSupport(egl::Config *config)
     // Visual id is root_visual of the screen
     config->nativeVisualID   = screen->root_visual;
     config->nativeVisualType = GetXcbVisualType(screen);
-
-    return true;
 }
 
 const char *DisplayVkXcb::getWSIExtension() const
@@ -115,4 +132,19 @@ const char *DisplayVkXcb::getWSIExtension() const
     return VK_KHR_XCB_SURFACE_EXTENSION_NAME;
 }
 
+bool IsVulkanXcbDisplayAvailable()
+{
+    return true;
+}
+
+DisplayImpl *CreateVulkanXcbDisplay(const egl::DisplayState &state)
+{
+    return new DisplayVkXcb(state);
+}
+
+angle::Result DisplayVkXcb::waitNativeImpl()
+{
+    XSync(reinterpret_cast<Display *>(mState.displayId), False);
+    return angle::Result::Continue;
+}
 }  // namespace rx

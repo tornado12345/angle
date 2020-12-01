@@ -1,30 +1,44 @@
 //
-// Copyright (c) 2013 The ANGLE Project Authors. All rights reserved.
+// Copyright 2013 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 
 #include "SampleApplication.h"
 
+#include "common/debug.h"
 #include "util/EGLWindow.h"
 #include "util/gles_loader_autogen.h"
 #include "util/random_utils.h"
-#include "util/system_utils.h"
+#include "util/shader_utils.h"
+#include "util/test_utils.h"
+#include "util/util_gl.h"
 
 #include <string.h>
 #include <iostream>
 #include <utility>
 
+#if defined(ANGLE_PLATFORM_WINDOWS)
+#    include "util/windows/WGLWindow.h"
+#endif  // defined(ANGLE_PLATFORM_WINDOWS)
+
 namespace
 {
 const char *kUseAngleArg = "--use-angle=";
+const char *kUseGlArg    = "--use-gl=native";
 
 using DisplayTypeInfo = std::pair<const char *, EGLint>;
 
 const DisplayTypeInfo kDisplayTypes[] = {
-    {"d3d9", EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE}, {"d3d11", EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE},
-    {"gl", EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE}, {"gles", EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE},
-    {"null", EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE}, {"vulkan", EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE}};
+    {"d3d9", EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE},
+    {"d3d11", EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE},
+    {"gl", EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE},
+    {"gles", EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE},
+    {"metal", EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE},
+    {"null", EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE},
+    {"swiftshader", EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE},
+    {"vulkan", EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE},
+};
 
 EGLint GetDisplayTypeFromArg(const char *displayTypeArg)
 {
@@ -40,6 +54,24 @@ EGLint GetDisplayTypeFromArg(const char *displayTypeArg)
     std::cout << "Unknown ANGLE back-end API: " << displayTypeArg << std::endl;
     return EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
 }
+
+EGLint GetDeviceTypeFromArg(const char *displayTypeArg)
+{
+    if (strcmp(displayTypeArg, "swiftshader") == 0)
+    {
+        return EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE;
+    }
+    else
+    {
+        return EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE;
+    }
+}
+
+ANGLE_MAYBE_UNUSED bool IsGLExtensionEnabled(const std::string &extName)
+{
+    return angle::CheckExtensionExists(reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS)),
+                                       extName);
+}
 }  // anonymous namespace
 
 SampleApplication::SampleApplication(std::string name,
@@ -47,44 +79,63 @@ SampleApplication::SampleApplication(std::string name,
                                      char **argv,
                                      EGLint glesMajorVersion,
                                      EGLint glesMinorVersion,
-                                     size_t width,
-                                     size_t height)
+                                     uint32_t width,
+                                     uint32_t height)
     : mName(std::move(name)),
       mWidth(width),
       mHeight(height),
       mRunning(false),
+      mFrameCount(0),
+      mGLWindow(nullptr),
       mEGLWindow(nullptr),
-      mOSWindow(nullptr)
+      mOSWindow(nullptr),
+      mDriverType(angle::GLESDriverType::AngleEGL)
 {
-    EGLint requestedRenderer = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
+    mPlatformParams.renderer = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
+    bool useNativeGL         = false;
 
-    if (argc > 1 && strncmp(argv[1], kUseAngleArg, strlen(kUseAngleArg)) == 0)
+    for (int argIndex = 1; argIndex < argc; argIndex++)
     {
-        requestedRenderer = GetDisplayTypeFromArg(argv[1] + strlen(kUseAngleArg));
+        if (strncmp(argv[argIndex], kUseAngleArg, strlen(kUseAngleArg)) == 0)
+        {
+            const char *arg            = argv[argIndex] + strlen(kUseAngleArg);
+            mPlatformParams.renderer   = GetDisplayTypeFromArg(arg);
+            mPlatformParams.deviceType = GetDeviceTypeFromArg(arg);
+        }
+
+        if (strncmp(argv[argIndex], kUseGlArg, strlen(kUseGlArg)) == 0)
+        {
+            useNativeGL = true;
+        }
     }
 
-    // Load EGL library so we can initialize the display.
-    mEntryPointsLib.reset(angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME));
-
-    mEGLWindow = EGLWindow::New(glesMajorVersion, glesMinorVersion,
-                                EGLPlatformParameters(requestedRenderer));
-    mTimer.reset(CreateTimer());
     mOSWindow = OSWindow::New();
 
-    mEGLWindow->setConfigRedBits(8);
-    mEGLWindow->setConfigGreenBits(8);
-    mEGLWindow->setConfigBlueBits(8);
-    mEGLWindow->setConfigAlphaBits(8);
-    mEGLWindow->setConfigDepthBits(24);
-    mEGLWindow->setConfigStencilBits(8);
-
-    // Disable vsync
-    mEGLWindow->setSwapInterval(0);
+    // Load EGL library so we can initialize the display.
+    if (useNativeGL)
+    {
+#if defined(ANGLE_PLATFORM_WINDOWS)
+        mGLWindow = WGLWindow::New(glesMajorVersion, glesMinorVersion);
+        mEntryPointsLib.reset(angle::OpenSharedLibrary("opengl32", angle::SearchType::SystemDir));
+        mDriverType = angle::GLESDriverType::SystemWGL;
+#else
+        mGLWindow = EGLWindow::New(glesMajorVersion, glesMinorVersion);
+        mEntryPointsLib.reset(
+            angle::OpenSharedLibraryWithExtension(angle::GetNativeEGLLibraryNameWithExtension()));
+        mDriverType = angle::GLESDriverType::SystemEGL;
+#endif  // defined(ANGLE_PLATFORM_WINDOWS)
+    }
+    else
+    {
+        mGLWindow = mEGLWindow = EGLWindow::New(glesMajorVersion, glesMinorVersion);
+        mEntryPointsLib.reset(
+            angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME, angle::SearchType::ApplicationDir));
+    }
 }
 
 SampleApplication::~SampleApplication()
 {
-    EGLWindow::Delete(&mEGLWindow);
+    GLWindowBase::Delete(&mGLWindow);
     OSWindow::Delete(&mOSWindow);
 }
 
@@ -101,7 +152,7 @@ void SampleApplication::draw() {}
 
 void SampleApplication::swap()
 {
-    mEGLWindow->swap();
+    mGLWindow->swap();
 }
 
 OSWindow *SampleApplication::getWindow() const
@@ -111,21 +162,25 @@ OSWindow *SampleApplication::getWindow() const
 
 EGLConfig SampleApplication::getConfig() const
 {
+    ASSERT(mEGLWindow);
     return mEGLWindow->getConfig();
 }
 
 EGLDisplay SampleApplication::getDisplay() const
 {
+    ASSERT(mEGLWindow);
     return mEGLWindow->getDisplay();
 }
 
 EGLSurface SampleApplication::getSurface() const
 {
+    ASSERT(mEGLWindow);
     return mEGLWindow->getSurface();
 }
 
 EGLContext SampleApplication::getContext() const
 {
+    ASSERT(mEGLWindow);
     return mEGLWindow->getContext();
 }
 
@@ -138,15 +193,35 @@ int SampleApplication::run()
 
     mOSWindow->setVisible(true);
 
-    if (!mEGLWindow->initializeGL(mOSWindow, mEntryPointsLib.get()))
+    ConfigParameters configParams;
+    configParams.redBits     = 8;
+    configParams.greenBits   = 8;
+    configParams.blueBits    = 8;
+    configParams.alphaBits   = 8;
+    configParams.depthBits   = 24;
+    configParams.stencilBits = 8;
+
+    if (!mGLWindow->initializeGL(mOSWindow, mEntryPointsLib.get(), mDriverType, mPlatformParams,
+                                 configParams))
     {
         return -1;
     }
 
-    angle::LoadGLES(eglGetProcAddress);
+    // Disable vsync
+    if (!mGLWindow->setSwapInterval(0))
+    {
+        return -1;
+    }
 
     mRunning   = true;
     int result = 0;
+
+#if defined(ANGLE_ENABLE_ASSERTS)
+    if (IsGLExtensionEnabled("GL_KHR_debug"))
+    {
+        EnableDebugCallback(this);
+    }
+#endif
 
     if (!initialize())
     {
@@ -154,12 +229,12 @@ int SampleApplication::run()
         result   = -1;
     }
 
-    mTimer->start();
+    mTimer.start();
     double prevTime = 0.0;
 
     while (mRunning)
     {
-        double elapsedTime = mTimer->getElapsedTime();
+        double elapsedTime = mTimer.getElapsedTime();
         double deltaTime   = elapsedTime - prevTime;
 
         step(static_cast<float>(deltaTime), elapsedTime);
@@ -169,9 +244,19 @@ int SampleApplication::run()
         while (popEvent(&event))
         {
             // If the application did not catch a close event, close now
-            if (event.Type == Event::EVENT_CLOSED)
+            switch (event.Type)
             {
-                exit();
+                case Event::EVENT_CLOSED:
+                    exit();
+                    break;
+                case Event::EVENT_KEY_RELEASED:
+                    onKeyUp(event.Key);
+                    break;
+                case Event::EVENT_KEY_PRESSED:
+                    onKeyDown(event.Key);
+                    break;
+                default:
+                    break;
             }
         }
 
@@ -186,10 +271,18 @@ int SampleApplication::run()
         mOSWindow->messageLoop();
 
         prevTime = elapsedTime;
+
+        mFrameCount++;
+
+        if (mFrameCount % 100 == 0)
+        {
+            printf("Rate: %0.2lf frames / second\n",
+                   static_cast<double>(mFrameCount) / mTimer.getElapsedTime());
+        }
     }
 
     destroy();
-    mEGLWindow->destroyGL();
+    mGLWindow->destroyGL();
     mOSWindow->destroy();
 
     return result;
@@ -203,4 +296,14 @@ void SampleApplication::exit()
 bool SampleApplication::popEvent(Event *event)
 {
     return mOSWindow->popEvent(event);
+}
+
+void SampleApplication::onKeyUp(const Event::KeyEvent &keyEvent)
+{
+    // Default no-op.
+}
+
+void SampleApplication::onKeyDown(const Event::KeyEvent &keyEvent)
+{
+    // Default no-op.
 }

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -54,7 +54,7 @@ class FunctionsGL : public DispatchTableGL
 
   private:
     void *loadProcAddress(const std::string &function) const override = 0;
-    void initializeDummyFunctionsForNULLDriver(const std::set<std::string> &extensionSet);
+    void initializeStubFunctionsForNULLDriver(const std::set<std::string> &extensionSet);
 };
 
 }  // namespace rx

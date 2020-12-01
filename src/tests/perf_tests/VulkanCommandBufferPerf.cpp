@@ -4,6 +4,9 @@
 //
 // VulkanCommandBufferPerf:
 //   Performance benchmark for Vulkan Primary/Secondary Command Buffer implementations.
+//  Can run just these tests by adding "--gtest_filter=VulkanCommandBufferPerfTest*"
+//   option to angle_white_box_perftests.
+//  When running on Android with run_angle_white_box_perftests, use "-v" option.
 
 #include "ANGLEPerfTest.h"
 #include "common/platform.h"
@@ -11,12 +14,17 @@
 
 #if defined(ANDROID)
 #    define NUM_CMD_BUFFERS 1000
+// Android devices tend to be slower so only do 10 frames to avoid timeout
 #    define NUM_FRAMES 10
 #else
 #    define NUM_CMD_BUFFERS 1000
 #    define NUM_FRAMES 100
 #endif
 
+// These are minimal shaders used to submit trivial draw commands to command
+//  buffers so that we can create large batches of cmd buffers with consistent
+//  draw patterns but size/type of cmd buffers can be varied to test cmd buffer
+//  differences across devices.
 constexpr char kVertShaderText[] = R"(
 #version 400
 #extension GL_ARB_separate_shader_objects : enable
@@ -51,7 +59,7 @@ using CommandBufferImpl = void (*)(sample_info &info,
 struct CommandBufferTestParams
 {
     CommandBufferImpl CBImplementation;
-    std::string suffix;
+    std::string story;
     int frames  = NUM_FRAMES;
     int buffers = NUM_CMD_BUFFERS;
 };
@@ -81,7 +89,7 @@ class VulkanCommandBufferPerfTest : public ANGLEPerfTest,
 };
 
 VulkanCommandBufferPerfTest::VulkanCommandBufferPerfTest()
-    : ANGLEPerfTest("VulkanCommandBufferPerfTest", GetParam().suffix, GetParam().frames)
+    : ANGLEPerfTest("VulkanCommandBufferPerfTest", "", GetParam().story, GetParam().frames)
 {
     mInfo             = {};
     mSampleTitle      = "Draw Textured Cube";
@@ -229,6 +237,7 @@ void Present(sample_info &info, VkFence drawFence)
     ASSERT_EQ(VK_SUCCESS, res);
 }
 
+// 100 separate primary cmd buffers, each with 1 Draw
 void PrimaryCommandBufferBenchmarkHundredIndividual(sample_info &info,
                                                     VkClearValue *clear_values,
                                                     VkFence drawFence,
@@ -294,6 +303,7 @@ void PrimaryCommandBufferBenchmarkHundredIndividual(sample_info &info,
     Present(info, drawFence);
 }
 
+// 100 of the same Draw cmds in the same primary cmd buffer
 void PrimaryCommandBufferBenchmarkOneWithOneHundred(sample_info &info,
                                                     VkClearValue *clear_values,
                                                     VkFence drawFence,
@@ -360,6 +370,7 @@ void PrimaryCommandBufferBenchmarkOneWithOneHundred(sample_info &info,
     Present(info, drawFence);
 }
 
+// 100 separate secondary cmd buffers, each with 1 Draw
 void SecondaryCommandBufferBenchmark(sample_info &info,
                                      VkClearValue *clear_values,
                                      VkFence drawFence,
@@ -451,6 +462,22 @@ void SecondaryCommandBufferBenchmark(sample_info &info,
     Present(info, drawFence);
 }
 
+// Details on the following functions that stress various cmd buffer reset methods.
+// All of these functions wrap the SecondaryCommandBufferBenchmark() test above,
+// adding additional overhead with various reset methods.
+// -CommandPoolDestroyBenchmark: Reset command buffers by destroying and re-creating
+//   command buffer pool.
+// -CommandPoolHardResetBenchmark: Reset the command pool w/ the RELEASE_RESOURCES
+//   bit set.
+// -CommandPoolSoftResetBenchmark: Reset to command pool w/o the RELEASE_RESOURCES
+//   bit set.
+// -CommandBufferExplicitHardResetBenchmark: Reset each individual command buffer
+//   w/ the RELEASE_RESOURCES bit set.
+// -CommandBufferExplicitSoftResetBenchmark: Reset each individual command buffer
+//   w/o the RELEASE_RESOURCES bit set.
+// -CommandBufferImplicitResetBenchmark: Reset each individual command buffer
+//   implicitly by calling "Begin" on previously used cmd buffer.
+
 void CommandPoolDestroyBenchmark(sample_info &info,
                                  VkClearValue *clear_values,
                                  VkFence drawFence,
@@ -537,7 +564,7 @@ CommandBufferTestParams PrimaryCBHundredIndividualParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = PrimaryCommandBufferBenchmarkHundredIndividual;
-    params.suffix           = "_PrimaryCB_Submit_100_With_1_Draw";
+    params.story            = "_PrimaryCB_Submit_100_With_1_Draw";
     return params;
 }
 
@@ -545,7 +572,7 @@ CommandBufferTestParams PrimaryCBOneWithOneHundredParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = PrimaryCommandBufferBenchmarkOneWithOneHundred;
-    params.suffix           = "_PrimaryCB_Submit_1_With_100_Draw";
+    params.story            = "_PrimaryCB_Submit_1_With_100_Draw";
     return params;
 }
 
@@ -553,7 +580,7 @@ CommandBufferTestParams SecondaryCBParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = SecondaryCommandBufferBenchmark;
-    params.suffix           = "_SecondaryCB_Submit_1_With_100_Draw_In_Individual_Secondary";
+    params.story            = "_SecondaryCB_Submit_1_With_100_Draw_In_Individual_Secondary";
     return params;
 }
 
@@ -561,7 +588,7 @@ CommandBufferTestParams CommandPoolDestroyParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = CommandPoolDestroyBenchmark;
-    params.suffix           = "_Reset_CBs_With_Destroy_Command_Pool";
+    params.story            = "_Reset_CBs_With_Destroy_Command_Pool";
     return params;
 }
 
@@ -569,7 +596,7 @@ CommandBufferTestParams CommandPoolHardResetParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = CommandPoolHardResetBenchmark;
-    params.suffix           = "_Reset_CBs_With_Hard_Reset_Command_Pool";
+    params.story            = "_Reset_CBs_With_Hard_Reset_Command_Pool";
     return params;
 }
 
@@ -577,7 +604,7 @@ CommandBufferTestParams CommandPoolSoftResetParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = CommandPoolSoftResetBenchmark;
-    params.suffix           = "_Reset_CBs_With_Soft_Reset_Command_Pool";
+    params.story            = "_Reset_CBs_With_Soft_Reset_Command_Pool";
     return params;
 }
 
@@ -585,7 +612,7 @@ CommandBufferTestParams CommandBufferExplicitHardResetParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = CommandBufferExplicitHardResetBenchmark;
-    params.suffix           = "_Reset_CBs_With_Explicit_Hard_Reset_Command_Buffers";
+    params.story            = "_Reset_CBs_With_Explicit_Hard_Reset_Command_Buffers";
     return params;
 }
 
@@ -593,7 +620,7 @@ CommandBufferTestParams CommandBufferExplicitSoftResetParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = CommandBufferExplicitSoftResetBenchmark;
-    params.suffix           = "_Reset_CBs_With_Explicit_Soft_Reset_Command_Buffers";
+    params.story            = "_Reset_CBs_With_Explicit_Soft_Reset_Command_Buffers";
     return params;
 }
 
@@ -601,7 +628,7 @@ CommandBufferTestParams CommandBufferImplicitResetParams()
 {
     CommandBufferTestParams params;
     params.CBImplementation = CommandBufferImplicitResetBenchmark;
-    params.suffix           = "_Reset_CBs_With_Implicit_Reset_Command_Buffers";
+    params.story            = "_Reset_CBs_With_Implicit_Reset_Command_Buffers";
     return params;
 }
 

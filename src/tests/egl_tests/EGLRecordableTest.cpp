@@ -26,14 +26,14 @@ class EGLRecordableTest : public ANGLETest
 TEST_P(EGLRecordableTest, ExtensionAlwaysAvailable)
 {
     EGLDisplay display = getEGLWindow()->getDisplay();
-    ASSERT_TRUE(ANGLETest::eglDisplayExtensionEnabled(display, "EGL_ANDROID_recordable"));
+    ASSERT_TRUE(IsEGLDisplayExtensionEnabled(display, "EGL_ANDROID_recordable"));
 }
 
 // Check that the default message filters and callbacks are correct
 TEST_P(EGLRecordableTest, CheckAllContexts)
 {
     EGLDisplay display = getEGLWindow()->getDisplay();
-    ANGLE_SKIP_TEST_IF(!ANGLETest::eglDisplayExtensionEnabled(display, "EGL_ANDROID_recordable"));
+    ANGLE_SKIP_TEST_IF(!IsEGLDisplayExtensionEnabled(display, "EGL_ANDROID_recordable"));
 
     int nConfigs = 0;
     ASSERT_EGL_TRUE(eglGetConfigs(display, nullptr, 0, &nConfigs));
@@ -63,4 +63,4 @@ TEST_P(EGLRecordableTest, CheckAllContexts)
 
 }  // namespace angle
 
-ANGLE_INSTANTIATE_TEST(EGLRecordableTest, ES2_D3D11(), ES2_OPENGL(), ES2_VULKAN());
+ANGLE_INSTANTIATE_TEST_ES2(EGLRecordableTest);

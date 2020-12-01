@@ -28,54 +28,65 @@
 // To output exactly one 4-byte element, each thread is responsible for Ed=4/Bd components.
 // Therefore, thread t is responsible for component indices [Ed*t, Ed*(t + 1)).
 //
+// We don't use Bs and Es for A2B10G10R10 and R10G10B10A2 formats since they take 10 or 2 bits per
+// component. Variables that are computed using Bs or Es are hardcoded instead.
+//
 // Component index c is at source offset:
 //
 //     floor(c / Ns) * Ss + mod(c, Ns) * Bs
 //
 //   - Flags:
-//     * IsAligned: if true, assumes the workgroup size divides the output count, so there is no
-//                  need for bound checking.
 //     * IsBigEndian
 //   - Conversion:
-//     * IntToInt: covers byte, short and int types (distinguished by Bs and Bd).
-//     * UintToUint: covers ubyte, ushort and uint types (distinguished by Bs and Bd).
-//     * IntToFloat: Same types as IntToInt for source (including scaled).  Converts to float.
+//     * SintToSint: covers byte, short and int types (distinguished by Bs and Bd).
+//     * UintToUint: covers ubyte, ushort, uint and half float types (distinguished by Bs and Bd).
+//     * SintToFloat: Same types as SintToSint for source (including scaled).  Converts to float.
 //     * UintToFloat: Same types as UintToUint for source (including uscaled).  Converst to float.
 //     * SnormToFloat: Similar to IntToFloat, but normalized.
 //     * UnormToFloat: Similar to UintToFloat, but normalized.
 //     * FixedToFloat: 16.16 signed fixed-point to floating point.
 //     * FloatToFloat: float.
+//     * FloatToHalf: float to half-float
 //
-// IntToInt, UintToUint and FloatToFloat correspond to CopyNativeVertexData() and
-// Copy8SintTo16SintVertexData() in renderer/copyvertex.inc, FixedToFloat corresponds to
-// Copy32FixedTo32FVertexData, IntToFloat and UintToFloat correspond to CopyTo32FVertexData with
-// normalized=false and SnormToFloat and UnormToFloat correspond to CopyTo32FVertexData with
-// normalized=true.
+// SintToSint, UintToUint and FloatToFloat correspond to CopyNativeVertexData() and
+// Copy8SintTo16SintVertexData() in renderer/copyvertex.inc.
 //
+// FixedToFloat corresponds to Copy32FixedTo32FVertexData.
+//
+// SintToFloat and UintToFloat correspond to CopyTo32FVertexData with normalized=false.
+//
+// SnormToFloat and UnormToFloat correspond to CopyTo32FVertexData with normalized=true.
+//
+// If isSrcHDR, SintToSint, UintToUint, SintToFloat, UintToFloat and SnormToFloat
+// correspond to CopyXYZ10W2ToXYZW32FVertexData (if isSrcA2BGR10) or CopyW2XYZ10ToXYZW32FVertexData
+// (if !isSrcA2BGR10) with the proper options.
 
 #version 450 core
 
 // Source type
-#if IntToInt || IntToFloat
+#if SintToSint || SintToFloat
 #define SrcType int
 #elif UintToUint || UintToFloat
 #define SrcType uint
-#elif SnormToFloat || UnormToFloat || FixedToFloat || FloatToFloat
+#elif SnormToFloat || UnormToFloat || FixedToFloat || FloatToFloat || FloatToHalf
 #define SrcType float
 #else
 #error "Not all conversions are accounted for"
 #endif
 
 // Destination type
-#if IntToInt
+#if SintToSint
 #define DestType int
 #define IsDestFloat 0
 #elif UintToUint
 #define DestType uint
 #define IsDestFloat 0
-#elif IntToFloat || UintToFloat || SnormToFloat || UnormToFloat || FixedToFloat || FloatToFloat
+#elif SintToFloat || UintToFloat || SnormToFloat || UnormToFloat || FixedToFloat || FloatToFloat
 #define DestType float
 #define IsDestFloat 1
+#elif FloatToHalf
+#define DestType float
+#define IsDestFloat 0
 #else
 #error "Not all conversions are accounted for"
 #endif
@@ -117,6 +128,14 @@ layout (push_constant) uniform PushConstants
     uint Bd;       // Destination component byte size
     uint Sd;       // Precalculated Nd*Bd
     uint Ed;       // Precalculated 4/Bd
+
+    // uint representation of src emulated alpha.  If destination has alpha and source doesn't,
+    // this value is used as src alpha, which is then converted to destination format the same way
+    // other data from source is.
+    uint srcEmulatedAlpha;
+
+    bool isSrcHDR; // Whether source is either of A2BGR10 or RGB10A2
+    bool isSrcA2BGR10;  // Whether source is A2BGR10
 } params;
 
 // Define shorthands for more readable formulas:
@@ -190,8 +209,9 @@ SrcType loadSourceComponent(uint cd)
     uint vertex = cd / Nd;
     uint component = cd % Nd;
 
-    // If no such component, return 0
-    if (component >= Ns)
+    // Fill the alpha channel with 1.0f in case of the source format doesn't have an alpha channel
+    // For all other components fill in 0.
+    if (component >= Ns && component < 3)
     {
         return 0;
     }
@@ -199,23 +219,68 @@ SrcType loadSourceComponent(uint cd)
     // Load the source component
     uint offset = getSourceComponentOffset(vertex, component);
     uint block = srcData[offset / 4];
-    uint shiftBits = getShiftBits(offset, Bs);
 
-    uint valueBits = Bs * 8;
-    uint valueMask = valueBits == 32 ? -1 : (1 << valueBits) - 1;
-    uint valueAsUint = (block >> shiftBits) & valueMask;
+    uint shiftBits;
+    uint valueBits;
+    uint valueMask;
+
+    // A2B10G10R10's components are not byte-aligned, so they are especially handled.
+    if (params.isSrcHDR)
+    {
+        valueBits = component == 3 ? 2 : 10;
+        valueMask = component == 3 ? 0x03 : 0x3FF;
+        if (params.isSrcA2BGR10)
+        {
+            shiftBits = 10 * component;
+        }
+        else
+        {
+            // channel order is reversed
+            shiftBits = component == 3 ? 0 : (valueBits * (2 - component) + 2);
+        }
+    }
+    else
+    {
+        shiftBits = getShiftBits(offset, Bs);
+        valueBits = Bs * 8;
+        valueMask = valueBits == 32 ? -1 : (1 << valueBits) - 1;
+    }
+
+    uint valueAsUint;
+
+    if (component >= Ns && component == 3)
+    {
+        valueAsUint = params.srcEmulatedAlpha;
+    }
+    else
+    {
+        valueAsUint = (block >> shiftBits) & valueMask;
+    }
 
     // Convert to SrcType
-#if IntToInt || IntToFloat
-    bool isNegative = (valueAsUint & (1 << (valueBits - 1))) != 0;
-    // Sign extend
-    SrcType value = SrcType(valueAsUint | (isNegative ? 0xFFFFFFFF << valueBits : 0));
+#if SintToSint || SintToFloat
+    if (valueBits < 32)
+    {
+        bool isNegative = (valueAsUint & (1 << (valueBits - 1))) != 0;
+        // Sign extend
+        // Note: if valueBits == 32, then 0xFFFFFFFF << valueBits is undefined,
+        // causing sign extension of value below to produce incorrect values.
+        uint signExtension = isNegative ? 0xFFFFFFFF << valueBits : 0;
+        valueAsUint |= signExtension;
+    }
+    SrcType value = SrcType(valueAsUint);
 #elif UintToUint || UintToFloat
     SrcType value = valueAsUint;
 #elif SnormToFloat
-    bool isNegative = (valueAsUint & (1 << (valueBits - 1))) != 0;
-    int valueAsInt = int(valueAsUint | (isNegative ? 0xFFFFFFFF << valueBits : 0));
-    SrcType value = (2 * float(valueAsInt) + 1) / valueMask;
+    if (valueBits < 32)
+    {
+        bool isNegative = (valueAsUint & (1 << (valueBits - 1))) != 0;
+        uint signExtension = isNegative ? 0xFFFFFFFF << valueBits : 0;
+        valueAsUint |= signExtension;
+    }
+    int valueAsInt = int(valueAsUint);
+    SrcType value = float(valueAsInt) / (valueMask >> 1);
+    value = max(value, float(-1));
 #elif UnormToFloat
     float positiveMax = valueMask;
     // Scale [0, P] to [0, 1]
@@ -223,7 +288,7 @@ SrcType loadSourceComponent(uint cd)
 #elif FixedToFloat
     float divisor = 1.0f / 65536.0f;
     SrcType value = int(valueAsUint) * divisor;
-#elif FloatToFloat
+#elif FloatToFloat || FloatToHalf
     SrcType value = uintBitsToFloat(valueAsUint);
 #else
 #error "Not all conversions are accounted for"
@@ -244,7 +309,7 @@ uint makeDestinationComponent(uint cd, DestType value)
     // Return valueAsUint, shifted to the right spot.  Multiple calls to this function should be |ed
     // and eventually written to the destination.
 
-#if IntToInt || UintToUint
+#if SintToSint || UintToUint
     uint vertex = cd / Nd;
     uint component = cd % Nd;
 
@@ -254,6 +319,10 @@ uint makeDestinationComponent(uint cd, DestType value)
     uint valueBits = Bd * 8;
     uint valueMask = valueBits == 32 ? -1 : (1 << valueBits) - 1;
     uint valueAsUint = (uint(value) & valueMask) << shiftBits;
+
+#elif FloatToHalf
+    uint shift = ((cd & 1) == 0) ? 0 : 16;
+    uint valueAsUint = packHalf2x16(vec2(value, 0.0)) << shift;
 
 #elif IsDestFloat
     // If the destination is float, it will occupy the whole result.
@@ -274,21 +343,17 @@ void storeDestinationComponents(uint valueAsUint)
 
 void main()
 {
-#if !IsAligned
     if (gl_GlobalInvocationID.x >= params.outputCount)
         return;
-#endif // IsAligned
 
     uint valueOut = 0;
     for (uint i = 0; i < Ed; ++i)
     {
         uint cd = gl_GlobalInvocationID.x * Ed + i;
-#if !IsAligned
         if (cd >= params.componentCount)
         {
             break;
         }
-#endif
 
         SrcType srcValue = loadSourceComponent(cd);
         DestType destValue = convertComponent(srcValue);

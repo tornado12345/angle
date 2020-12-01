@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -18,14 +18,30 @@ X11Pixmap::~X11Pixmap()
     }
 }
 
-bool X11Pixmap::initialize(EGLNativeDisplayType display, size_t width, size_t height, int depth)
+bool X11Pixmap::initialize(EGLNativeDisplayType display,
+                           size_t width,
+                           size_t height,
+                           int nativeVisual)
 {
-    mDisplay = display;
+    mDisplay = reinterpret_cast<Display *>(display);
 
     int screen  = DefaultScreen(mDisplay);
     Window root = RootWindow(mDisplay, screen);
+    int depth   = 0;
 
-    mPixmap = XCreatePixmap(mDisplay, root, width, height, depth);
+    XVisualInfo visualTemplate;
+    visualTemplate.visualid = nativeVisual;
+
+    int numVisuals    = 0;
+    XVisualInfo *info = XGetVisualInfo(mDisplay, VisualIDMask, &visualTemplate, &numVisuals);
+    if (numVisuals == 1)
+    {
+        depth = info->depth;
+    }
+    XFree(info);
+
+    mPixmap = XCreatePixmap(mDisplay, root, static_cast<unsigned int>(width),
+                            static_cast<unsigned int>(height), depth);
 
     return mPixmap != 0;
 }

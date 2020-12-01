@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -24,8 +24,7 @@
 #include "libANGLE/renderer/gl/wgl/RendererWGL.h"
 #include "libANGLE/renderer/gl/wgl/WindowSurfaceWGL.h"
 #include "libANGLE/renderer/gl/wgl/wgl_utils.h"
-
-#include "platform/Platform.h"
+#include "platform/PlatformMethods.h"
 
 #include <EGL/eglext.h>
 #include <sstream>
@@ -106,7 +105,6 @@ DisplayWGL::DisplayWGL(const egl::DisplayState &state)
       mD3d11Module(nullptr),
       mD3D11DeviceHandle(nullptr),
       mD3D11Device(nullptr),
-      mHasWorkerContexts(true),
       mUseARBShare(true)
 {}
 
@@ -128,7 +126,7 @@ egl::Error DisplayWGL::initializeImpl(egl::Display *display)
 {
     mDisplayAttributes = display->getAttributeMap();
 
-    mOpenGLModule = LoadLibraryA("opengl32.dll");
+    mOpenGLModule = LoadLibraryExA("opengl32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!mOpenGLModule)
     {
         return egl::EglNotInitialized() << "Failed to load OpenGL library.";
@@ -138,7 +136,7 @@ egl::Error DisplayWGL::initializeImpl(egl::Display *display)
     mFunctionsWGL->initialize(mOpenGLModule, nullptr);
 
     // WGL can't grab extensions until it creates a context because it needs to load the driver's
-    // DLLs first. Create a dummy context to load the driver and determine which GL versions are
+    // DLLs first. Create a stub context to load the driver and determine which GL versions are
     // available.
 
     // Work around compile error from not defining "UNICODE" while Chromium does
@@ -148,7 +146,7 @@ egl::Error DisplayWGL::initializeImpl(egl::Display *display)
     stream << "ANGLE DisplayWGL " << gl::FmtHex(display) << " Intermediate Window Class";
     std::string className = stream.str();
 
-    WNDCLASSA intermediateClassDesc     = {0};
+    WNDCLASSA intermediateClassDesc     = {};
     intermediateClassDesc.style         = CS_OWNDC;
     intermediateClassDesc.lpfnWndProc   = DefWindowProcA;
     intermediateClassDesc.cbClsExtra    = 0;
@@ -167,60 +165,61 @@ egl::Error DisplayWGL::initializeImpl(egl::Display *display)
                << "\":" << gl::FmtErr(HRESULT_CODE(GetLastError()));
     }
 
-    HWND dummyWindow =
-        CreateWindowExA(0, reinterpret_cast<const char *>(mWindowClass), "ANGLE Dummy Window",
+    HWND placeholderWindow =
+        CreateWindowExA(0, reinterpret_cast<const char *>(mWindowClass), "ANGLE Placeholder Window",
                         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
                         CW_USEDEFAULT, nullptr, nullptr, nullptr, nullptr);
-    if (!dummyWindow)
+    if (!placeholderWindow)
     {
-        return egl::EglNotInitialized() << "Failed to create dummy OpenGL window.";
+        return egl::EglNotInitialized() << "Failed to create placeholder OpenGL window.";
     }
 
-    HDC dummyDeviceContext = GetDC(dummyWindow);
-    if (!dummyDeviceContext)
+    HDC placeholderDeviceContext = GetDC(placeholderWindow);
+    if (!placeholderDeviceContext)
     {
         return egl::EglNotInitialized()
-               << "Failed to get the device context of the dummy OpenGL window.";
+               << "Failed to get the device context of the placeholder OpenGL window.";
     }
 
     const PIXELFORMATDESCRIPTOR pixelFormatDescriptor = wgl::GetDefaultPixelFormatDescriptor();
 
-    int dummyPixelFormat = ChoosePixelFormat(dummyDeviceContext, &pixelFormatDescriptor);
-    if (dummyPixelFormat == 0)
+    int placeholderPixelFormat =
+        ChoosePixelFormat(placeholderDeviceContext, &pixelFormatDescriptor);
+    if (placeholderPixelFormat == 0)
     {
         return egl::EglNotInitialized()
-               << "Could not find a compatible pixel format for the dummy OpenGL window.";
+               << "Could not find a compatible pixel format for the placeholder OpenGL window.";
     }
 
-    if (!SetPixelFormat(dummyDeviceContext, dummyPixelFormat, &pixelFormatDescriptor))
+    if (!SetPixelFormat(placeholderDeviceContext, placeholderPixelFormat, &pixelFormatDescriptor))
     {
         return egl::EglNotInitialized()
                << "Failed to set the pixel format on the intermediate OpenGL window.";
     }
 
-    HGLRC dummyWGLContext = mFunctionsWGL->createContext(dummyDeviceContext);
-    if (!dummyDeviceContext)
+    HGLRC placeholderWGLContext = mFunctionsWGL->createContext(placeholderDeviceContext);
+    if (!placeholderDeviceContext)
     {
         return egl::EglNotInitialized()
-               << "Failed to create a WGL context for the dummy OpenGL window.";
+               << "Failed to create a WGL context for the placeholder OpenGL window.";
     }
 
-    if (!mFunctionsWGL->makeCurrent(dummyDeviceContext, dummyWGLContext))
+    if (!mFunctionsWGL->makeCurrent(placeholderDeviceContext, placeholderWGLContext))
     {
-        return egl::EglNotInitialized() << "Failed to make the dummy WGL context current.";
+        return egl::EglNotInitialized() << "Failed to make the placeholder WGL context current.";
     }
 
     // Reinitialize the wgl functions to grab the extensions
-    mFunctionsWGL->initialize(mOpenGLModule, dummyDeviceContext);
+    mFunctionsWGL->initialize(mOpenGLModule, placeholderDeviceContext);
 
     mHasWGLCreateContextRobustness =
         mFunctionsWGL->hasExtension("WGL_ARB_create_context_robustness");
 
-    // Destroy the dummy window and context
-    mFunctionsWGL->makeCurrent(dummyDeviceContext, nullptr);
-    mFunctionsWGL->deleteContext(dummyWGLContext);
-    ReleaseDC(dummyWindow, dummyDeviceContext);
-    DestroyWindow(dummyWindow);
+    // Destroy the placeholder window and context
+    mFunctionsWGL->makeCurrent(placeholderDeviceContext, nullptr);
+    mFunctionsWGL->deleteContext(placeholderWGLContext);
+    ReleaseDC(placeholderWindow, placeholderDeviceContext);
+    DestroyWindow(placeholderWindow);
 
     const egl::AttributeMap &displayAttributes = display->getAttributeMap();
     EGLint requestedDisplayType                = static_cast<EGLint>(displayAttributes.get(
@@ -291,13 +290,6 @@ egl::Error DisplayWGL::initializeImpl(egl::Display *display)
     if (requestedDisplayType == EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE && IsIntel(vendor))
     {
         return egl::EglNotInitialized() << "Intel OpenGL ES drivers are not supported.";
-    }
-
-    // Using worker contexts is not currently supported due to bugs in the driver.
-    // http://anglebug.com/3031
-    if (IsAMD(vendor))
-    {
-        mHasWorkerContexts = false;
     }
 
     // Create DXGI swap chains for windows that come from other processes.  Windows is unable to
@@ -480,12 +472,6 @@ rx::ContextImpl *DisplayWGL::createContext(const gl::State &state,
     return new ContextWGL(state, errorSet, mRenderer);
 }
 
-DeviceImpl *DisplayWGL::createDevice()
-{
-    UNREACHABLE();
-    return nullptr;
-}
-
 egl::ConfigSet DisplayWGL::generateConfigs()
 {
     egl::ConfigSet configs;
@@ -565,11 +551,6 @@ egl::ConfigSet DisplayWGL::generateConfigs()
 
 bool DisplayWGL::testDeviceLost()
 {
-    if (mHasRobustness)
-    {
-        return mRenderer->getResetStatus() != GL_NO_ERROR;
-    }
-
     return false;
 }
 
@@ -641,13 +622,7 @@ egl::Error DisplayWGL::initializeD3DDevice()
         return egl::EglNotInitialized() << "Could not create D3D11 device, " << gl::FmtHR(result);
     }
 
-    egl::Error error = registerD3DDevice(mD3D11Device, &mD3D11DeviceHandle);
-    if (error.isError())
-    {
-        return error;
-    }
-
-    return egl::NoError();
+    return registerD3DDevice(mD3D11Device, &mD3D11DeviceHandle);
 }
 
 void DisplayWGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
@@ -665,8 +640,9 @@ void DisplayWGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->querySurfacePointer            = true;
     outExtensions->keyedMutex                     = true;
 
-    // Contexts are virtualized so textures can be shared globally
-    outExtensions->displayTextureShareGroup = true;
+    // Contexts are virtualized so textures and semaphores can be shared globally
+    outExtensions->displayTextureShareGroup   = true;
+    outExtensions->displaySemaphoreShareGroup = true;
 
     outExtensions->surfacelessContext = true;
 
@@ -697,7 +673,8 @@ egl::Error DisplayWGL::waitNative(const gl::Context *context, EGLint engine)
     return egl::NoError();
 }
 
-egl::Error DisplayWGL::makeCurrent(egl::Surface *drawSurface,
+egl::Error DisplayWGL::makeCurrent(egl::Display *display,
+                                   egl::Surface *drawSurface,
                                    egl::Surface *readSurface,
                                    gl::Context *context)
 {
@@ -709,6 +686,10 @@ egl::Error DisplayWGL::makeCurrent(egl::Surface *drawSurface,
         SurfaceWGL *drawSurfaceWGL = GetImplAs<SurfaceWGL>(drawSurface);
         newDC                      = drawSurfaceWGL->getDC();
     }
+    else
+    {
+        newDC = mDeviceContext;
+    }
 
     HGLRC newContext = currentContext.glrc;
     if (context)
@@ -716,9 +697,15 @@ egl::Error DisplayWGL::makeCurrent(egl::Surface *drawSurface,
         ContextWGL *contextWGL = GetImplAs<ContextWGL>(context);
         newContext             = contextWGL->getContext();
     }
+    else if (!mUseDXGISwapChains)
+    {
+        newContext = 0;
+    }
 
     if (newDC != currentContext.dc || newContext != currentContext.glrc)
     {
+        ASSERT(newDC != 0);
+
         if (!mFunctionsWGL->makeCurrent(newDC, newContext))
         {
             // TODO(geofflang): What error type here?
@@ -728,7 +715,7 @@ egl::Error DisplayWGL::makeCurrent(egl::Surface *drawSurface,
         currentContext.glrc = newContext;
     }
 
-    return DisplayGL::makeCurrent(drawSurface, readSurface, context);
+    return DisplayGL::makeCurrent(display, drawSurface, readSurface, context);
 }
 
 egl::Error DisplayWGL::registerD3DDevice(IUnknown *device, HANDLE *outHandle)
@@ -991,11 +978,6 @@ WorkerContext *DisplayWGL::createWorkerContext(std::string *infoLog,
                                                HGLRC sharedContext,
                                                const std::vector<int> &workerContextAttribs)
 {
-    if (!mHasWorkerContexts)
-    {
-        *infoLog += "Has no WorkerContext support.";
-        return nullptr;
-    }
     if (!sharedContext)
     {
         *infoLog += "Unable to create the shared context.";
@@ -1065,6 +1047,16 @@ WorkerContext *DisplayWGL::createWorkerContext(std::string *infoLog,
 #undef CLEANUP_ON_ERROR
 
     return new WorkerContextWGL(mFunctionsWGL, workerPbuffer, workerDeviceContext, workerContext);
+}
+
+void DisplayWGL::initializeFrontendFeatures(angle::FrontendFeatures *features) const
+{
+    mRenderer->initializeFrontendFeatures(features);
+}
+
+void DisplayWGL::populateFeatureList(angle::FeatureList *features)
+{
+    mRenderer->getFeatures().populateFeatureList(features);
 }
 
 }  // namespace rx

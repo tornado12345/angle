@@ -33,10 +33,8 @@ class D3DTextureTest : public ANGLETest
         setConfigStencilBits(8);
     }
 
-    void SetUp() override
+    void testSetUp() override
     {
-        ANGLETest::SetUp();
-
         constexpr char kVS[] =
             R"(precision highp float;
             attribute vec4 position;
@@ -82,37 +80,30 @@ class D3DTextureTest : public ANGLETest
         PFN_D3D11_CREATE_DEVICE createDeviceFunc = reinterpret_cast<PFN_D3D11_CREATE_DEVICE>(
             GetProcAddress(mD3D11Module, "D3D11CreateDevice"));
 
-        EGLWindow *window  = getEGLWindow();
-        EGLDisplay display = window->getDisplay();
-        if (eglDisplayExtensionEnabled(display, "EGL_EXT_device_query"))
+        EGLWindow *window   = getEGLWindow();
+        EGLDisplay display  = window->getDisplay();
+        EGLDeviceEXT device = EGL_NO_DEVICE_EXT;
+        if (IsEGLClientExtensionEnabled("EGL_EXT_device_query"))
         {
-            PFNEGLQUERYDISPLAYATTRIBEXTPROC eglQueryDisplayAttribEXT =
-                reinterpret_cast<PFNEGLQUERYDISPLAYATTRIBEXTPROC>(
-                    eglGetProcAddress("eglQueryDisplayAttribEXT"));
-            PFNEGLQUERYDEVICEATTRIBEXTPROC eglQueryDeviceAttribEXT =
-                reinterpret_cast<PFNEGLQUERYDEVICEATTRIBEXTPROC>(
-                    eglGetProcAddress("eglQueryDeviceAttribEXT"));
+            EGLAttrib result = 0;
+            EXPECT_EGL_TRUE(eglQueryDisplayAttribEXT(display, EGL_DEVICE_EXT, &result));
+            device = reinterpret_cast<EGLDeviceEXT>(result);
+        }
 
-            EGLDeviceEXT device = 0;
+        ASSERT_NE(EGL_NO_DEVICE_EXT, device);
+
+        if (IsEGLDeviceExtensionEnabled(device, "EGL_ANGLE_device_d3d"))
+        {
+            EGLAttrib result = 0;
+            if (eglQueryDeviceAttribEXT(device, EGL_D3D11_DEVICE_ANGLE, &result))
             {
-                EGLAttrib result = 0;
-                EXPECT_EGL_TRUE(eglQueryDisplayAttribEXT(display, EGL_DEVICE_EXT, &result));
-                device = reinterpret_cast<EGLDeviceEXT>(result);
+                mD3D11Device = reinterpret_cast<ID3D11Device *>(result);
+                mD3D11Device->AddRef();
             }
-
-            if (eglDeviceExtensionEnabled(device, "EGL_ANGLE_device_d3d"))
+            else if (eglQueryDeviceAttribEXT(device, EGL_D3D9_DEVICE_ANGLE, &result))
             {
-                EGLAttrib result = 0;
-                if (eglQueryDeviceAttribEXT(device, EGL_D3D11_DEVICE_ANGLE, &result))
-                {
-                    mD3D11Device = reinterpret_cast<ID3D11Device *>(result);
-                    mD3D11Device->AddRef();
-                }
-                else if (eglQueryDeviceAttribEXT(device, EGL_D3D9_DEVICE_ANGLE, &result))
-                {
-                    mD3D9Device = reinterpret_cast<IDirect3DDevice9 *>(result);
-                    mD3D9Device->AddRef();
-                }
+                mD3D9Device = reinterpret_cast<IDirect3DDevice9 *>(result);
+                mD3D9Device->AddRef();
             }
         }
         else
@@ -123,7 +114,7 @@ class D3DTextureTest : public ANGLETest
         }
     }
 
-    void TearDown() override
+    void testTearDown() override
     {
         glDeleteProgram(mTextureProgram);
 
@@ -141,8 +132,6 @@ class D3DTextureTest : public ANGLETest
             mD3D9Device->Release();
             mD3D9Device = nullptr;
         }
-
-        ANGLETest::TearDown();
     }
 
     EGLSurface createD3D11PBuffer(size_t width,
@@ -241,7 +230,7 @@ class D3DTextureTest : public ANGLETest
     {
         EGLWindow *window  = getEGLWindow();
         EGLDisplay display = window->getDisplay();
-        if (!eglDisplayExtensionEnabled(display, "EGL_ANGLE_d3d_texture_client_buffer"))
+        if (!IsEGLDisplayExtensionEnabled(display, "EGL_ANGLE_d3d_texture_client_buffer"))
         {
             std::cout << "Test skipped due to missing EGL_ANGLE_d3d_texture_client_buffer"
                       << std::endl;
@@ -309,7 +298,7 @@ class D3DTextureTest : public ANGLETest
 // Test creating pbuffer from textures with several different DXGI formats.
 TEST_P(D3DTextureTest, TestD3D11SupportedFormatsSurface)
 {
-    bool srgbSupported = extensionEnabled("GL_EXT_sRGB") || getClientMajorVersion() == 3;
+    bool srgbSupported = IsGLExtensionEnabled("GL_EXT_sRGB") || getClientMajorVersion() == 3;
     ANGLE_SKIP_TEST_IF(!valid() || !mD3D11Device || !srgbSupported);
 
     const DXGI_FORMAT formats[] = {DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
@@ -362,7 +351,8 @@ TEST_P(D3DTextureTest, TestD3D11SupportedFormatsTexture)
     bool srgb8alpha8TextureAttachmentSupported = getClientMajorVersion() >= 3;
     ANGLE_SKIP_TEST_IF(!valid() || !mD3D11Device || !srgb8alpha8TextureAttachmentSupported);
 
-    bool srgbWriteControlSupported = extensionEnabled("GL_EXT_sRGB_write_control") && !IsOpenGL();
+    bool srgbWriteControlSupported =
+        IsGLExtensionEnabled("GL_EXT_sRGB_write_control") && !IsOpenGL();
 
     const DXGI_FORMAT formats[] = {DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM,
                                    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
@@ -654,7 +644,7 @@ TEST_P(D3DTextureTest, GlColorspaceNotAllowedForTypedD3DTexture)
     ANGLE_SKIP_TEST_IF(!mD3D11Device);
 
     // SRGB support is required.
-    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_EXT_sRGB") && getClientMajorVersion() < 3);
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_sRGB") && getClientMajorVersion() < 3);
 
     EGLint attribsExplicitColorspace[] = {
         EGL_TEXTURE_FORMAT, EGL_TEXTURE_RGBA,       EGL_TEXTURE_TARGET, EGL_TEXTURE_2D,
@@ -682,7 +672,7 @@ TEST_P(D3DTextureTest, TypelessD3DTextureNotSupported)
     ANGLE_SKIP_TEST_IF(IsD3D11());
 
     // SRGB support is required.
-    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_EXT_sRGB") && getClientMajorVersion() < 3);
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_sRGB") && getClientMajorVersion() < 3);
 
     EGLint attribs[] = {
         EGL_TEXTURE_FORMAT, EGL_TEXTURE_RGBA, EGL_TEXTURE_TARGET,
@@ -758,6 +748,7 @@ TEST_P(D3DTextureTest, Clear)
     glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ASSERT_GL_NO_ERROR();
+
     EXPECT_PIXEL_EQ(static_cast<GLint>(bufferSize) / 2, static_cast<GLint>(bufferSize) / 2, 255, 0,
                     255, 255);
 
@@ -1199,9 +1190,249 @@ TEST_P(D3DTextureTestMS, CopyTexSubImage2DTest)
     eglDestroySurface(display, pbuffer);
 }
 
+TEST_P(D3DTextureTest, ClearTextureImage)
+{
+    ANGLE_SKIP_TEST_IF(!valid() || !IsD3D11());
+
+    EGLWindow *window  = getEGLWindow();
+    EGLDisplay display = window->getDisplay();
+
+    window->makeCurrent();
+
+    const UINT bufferSize = 32;
+    EXPECT_TRUE(mD3D11Device != nullptr);
+    ID3D11Texture2D *d3d11_texture = nullptr;
+    CD3D11_TEXTURE2D_DESC desc(DXGI_FORMAT_R8G8B8A8_UNORM, bufferSize, bufferSize, 1, 1,
+                               D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET);
+    EXPECT_TRUE(SUCCEEDED(mD3D11Device->CreateTexture2D(&desc, nullptr, &d3d11_texture)));
+
+    const EGLint attribs[] = {EGL_NONE};
+
+    EGLImage image = eglCreateImageKHR(display, EGL_NO_CONTEXT, EGL_D3D11_TEXTURE_ANGLE,
+                                       static_cast<EGLClientBuffer>(d3d11_texture), attribs);
+    ASSERT_EGL_SUCCESS();
+    ASSERT_NE(image, EGL_NO_IMAGE_KHR);
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    ASSERT_GL_NO_ERROR();
+
+    glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    ASSERT_GL_NO_ERROR();
+
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+    EXPECT_EQ(glCheckFramebufferStatus(GL_FRAMEBUFFER),
+              static_cast<unsigned>(GL_FRAMEBUFFER_COMPLETE));
+    ASSERT_GL_NO_ERROR();
+
+    glViewport(0, 0, static_cast<GLsizei>(bufferSize), static_cast<GLsizei>(bufferSize));
+    glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_EQ(static_cast<GLint>(bufferSize) / 2, static_cast<GLint>(bufferSize) / 2, 255, 0,
+                    255, 255);
+
+    glDeleteFramebuffers(1, &fbo);
+    glDeleteTextures(1, &texture);
+
+    d3d11_texture->Release();
+}
+
+TEST_P(D3DTextureTest, NonRenderableTextureImage)
+{
+    ANGLE_SKIP_TEST_IF(!valid() || !IsD3D11());
+
+    EGLWindow *window  = getEGLWindow();
+    EGLDisplay display = window->getDisplay();
+
+    window->makeCurrent();
+
+    const UINT bufferSize = 32;
+    EXPECT_TRUE(mD3D11Device != nullptr);
+    ID3D11Texture2D *d3d11_texture = nullptr;
+    CD3D11_TEXTURE2D_DESC desc(DXGI_FORMAT_R8G8B8A8_UNORM, bufferSize, bufferSize, 1, 1,
+                               D3D11_BIND_SHADER_RESOURCE);
+    EXPECT_TRUE(SUCCEEDED(mD3D11Device->CreateTexture2D(&desc, nullptr, &d3d11_texture)));
+
+    const EGLint attribs[] = {EGL_NONE};
+
+    EGLImage image = eglCreateImageKHR(display, EGL_NO_CONTEXT, EGL_D3D11_TEXTURE_ANGLE,
+                                       static_cast<EGLClientBuffer>(d3d11_texture), attribs);
+    ASSERT_EGL_SUCCESS();
+    ASSERT_NE(image, EGL_NO_IMAGE_KHR);
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    ASSERT_GL_NO_ERROR();
+
+    glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    ASSERT_GL_NO_ERROR();
+
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+    EXPECT_EQ(glCheckFramebufferStatus(GL_FRAMEBUFFER),
+              static_cast<unsigned>(GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT));
+    ASSERT_GL_NO_ERROR();
+
+    glDeleteFramebuffers(1, &fbo);
+    glDeleteTextures(1, &texture);
+
+    d3d11_texture->Release();
+}
+
+TEST_P(D3DTextureTest, RGBEmulationTextureImage)
+{
+    ANGLE_SKIP_TEST_IF(!valid() || !IsD3D11());
+
+    EGLWindow *window  = getEGLWindow();
+    EGLDisplay display = window->getDisplay();
+
+    window->makeCurrent();
+
+    const UINT bufferSize = 32;
+    EXPECT_TRUE(mD3D11Device != nullptr);
+    ID3D11Texture2D *d3d11_texture = nullptr;
+    CD3D11_TEXTURE2D_DESC desc(DXGI_FORMAT_R8G8B8A8_UNORM, bufferSize, bufferSize, 1, 1,
+                               D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET);
+    EXPECT_TRUE(SUCCEEDED(mD3D11Device->CreateTexture2D(&desc, nullptr, &d3d11_texture)));
+
+    const EGLint attribs[] = {EGL_TEXTURE_INTERNAL_FORMAT_ANGLE, GL_RGB, EGL_NONE};
+
+    EGLImage image = eglCreateImageKHR(display, EGL_NO_CONTEXT, EGL_D3D11_TEXTURE_ANGLE,
+                                       static_cast<EGLClientBuffer>(d3d11_texture), attribs);
+    ASSERT_EGL_SUCCESS();
+    ASSERT_NE(image, EGL_NO_IMAGE_KHR);
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    ASSERT_GL_NO_ERROR();
+
+    glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    ASSERT_GL_NO_ERROR();
+
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+    EXPECT_EQ(glCheckFramebufferStatus(GL_FRAMEBUFFER),
+              static_cast<unsigned>(GL_FRAMEBUFFER_COMPLETE));
+    ASSERT_GL_NO_ERROR();
+
+    // Although we are writing 0.5 to the alpha channel it should have the same
+    // side effects as if alpha were 1.0.
+    glViewport(0, 0, static_cast<GLsizei>(bufferSize), static_cast<GLsizei>(bufferSize));
+    glClearColor(1.0f, 0.0f, 1.0f, 0.5f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_EQ(static_cast<GLint>(bufferSize) / 2, static_cast<GLint>(bufferSize) / 2, 255, 0,
+                    255, 255);
+
+    GLuint rgbaRbo;
+    glGenRenderbuffers(1, &rgbaRbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, rgbaRbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8_OES, bufferSize, bufferSize);
+
+    GLuint rgbaFbo;
+    glGenFramebuffers(1, &rgbaFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, rgbaFbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rgbaRbo);
+    EXPECT_EQ(glCheckFramebufferStatus(GL_FRAMEBUFFER),
+              static_cast<unsigned>(GL_FRAMEBUFFER_COMPLETE));
+    ASSERT_GL_NO_ERROR();
+
+    // BlitFramebuffer from/to RGBA framebuffer fails.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, rgbaFbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+    glBlitFramebufferANGLE(0, 0, bufferSize, bufferSize, 0, 0, bufferSize, bufferSize,
+                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    ASSERT_GL_ERROR(GL_INVALID_OPERATION);
+    ASSERT_GL_NO_ERROR();
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rgbaFbo);
+    glBlitFramebufferANGLE(0, 0, bufferSize, bufferSize, 0, 0, bufferSize, bufferSize,
+                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    ASSERT_GL_ERROR(GL_INVALID_OPERATION);
+    ASSERT_GL_NO_ERROR();
+
+    GLuint rgbRbo;
+    glGenRenderbuffers(1, &rgbRbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, rgbRbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB8_OES, bufferSize, bufferSize);
+
+    GLuint rgbFbo;
+    glGenFramebuffers(1, &rgbFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, rgbFbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rgbRbo);
+    EXPECT_EQ(glCheckFramebufferStatus(GL_FRAMEBUFFER),
+              static_cast<unsigned>(GL_FRAMEBUFFER_COMPLETE));
+    ASSERT_GL_NO_ERROR();
+    glClearColor(1.0f, 0.0f, 1.0f, 0.5f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+
+    // Clear texture framebuffer.
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_EQ(static_cast<GLint>(bufferSize) / 2, static_cast<GLint>(bufferSize) / 2, 0, 0, 0,
+                    255);
+
+    // BlitFramebuffer from/to RGB framebuffer succeeds.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, rgbFbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+    glBlitFramebufferANGLE(0, 0, bufferSize, bufferSize, 0, 0, bufferSize, bufferSize,
+                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_EQ(static_cast<GLint>(bufferSize) / 2, static_cast<GLint>(bufferSize) / 2, 255, 0,
+                    255, 255);
+
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rgbFbo);
+    glBlitFramebufferANGLE(0, 0, bufferSize, bufferSize, 0, 0, bufferSize, bufferSize,
+                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    ASSERT_GL_NO_ERROR();
+    glBindFramebuffer(GL_FRAMEBUFFER, rgbFbo);
+    EXPECT_PIXEL_EQ(static_cast<GLint>(bufferSize) / 2, static_cast<GLint>(bufferSize) / 2, 0, 0, 0,
+                    255);
+
+    glDeleteFramebuffers(1, &rgbFbo);
+    glDeleteRenderbuffers(1, &rgbRbo);
+    glDeleteFramebuffers(1, &rgbaFbo);
+    glDeleteRenderbuffers(1, &rgbaRbo);
+    glDeleteFramebuffers(1, &fbo);
+    glDeleteTextures(1, &texture);
+
+    d3d11_texture->Release();
+}
+
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
-ANGLE_INSTANTIATE_TEST(D3DTextureTest, ES2_D3D9(), ES2_D3D11(), ES2_OPENGL(), ES2_VULKAN());
-ANGLE_INSTANTIATE_TEST(D3DTextureTestES3, ES3_D3D11(), ES3_OPENGL());
-ANGLE_INSTANTIATE_TEST(D3DTextureTestMS, ES2_D3D11());
+ANGLE_INSTANTIATE_TEST_ES2(D3DTextureTest);
+ANGLE_INSTANTIATE_TEST_ES3(D3DTextureTestES3);
+// D3D Debug device reports an error. http://anglebug.com/3513
+// ANGLE_INSTANTIATE_TEST(D3DTextureTestMS, ES2_D3D11());
 }  // namespace angle

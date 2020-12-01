@@ -32,10 +32,8 @@ class EXTMultisampleCompatibilityTest : public ANGLETest
         setConfigAlphaBits(8);
     }
 
-    void SetUp() override
+    void testSetUp() override
     {
-        ANGLETest::SetUp();
-
         mProgram = CompileProgram(essl1_shaders::vs::Simple(), essl1_shaders::fs::UniformColor());
 
         GLuint position_loc = glGetAttribLocation(mProgram, essl1_shaders::PositionAttrib());
@@ -52,12 +50,10 @@ class EXTMultisampleCompatibilityTest : public ANGLETest
         glVertexAttribPointer(position_loc, 2, GL_FLOAT, GL_FALSE, 0, 0);
     }
 
-    void TearDown() override
+    void testTearDown() override
     {
         glDeleteBuffers(1, &mVBO);
         glDeleteProgram(mProgram);
-
-        ANGLETest::TearDown();
     }
 
     void prepareForDraw()
@@ -133,9 +129,9 @@ class EXTMultisampleCompatibilityTest : public ANGLETest
 
     bool isApplicable() const
     {
-        return extensionEnabled("GL_EXT_multisample_compatibility") &&
-               extensionEnabled("GL_ANGLE_framebuffer_multisample") &&
-               extensionEnabled("GL_OES_rgb8_rgba8") && !IsAMD();
+        return IsGLExtensionEnabled("GL_EXT_multisample_compatibility") &&
+               IsGLExtensionEnabled("GL_ANGLE_framebuffer_multisample") &&
+               IsGLExtensionEnabled("GL_OES_rgb8_rgba8") && !IsAMD();
     }
     GLuint mSampleFBO;
     GLuint mResolveFBO;
@@ -175,6 +171,9 @@ TEST_P(EXTMultisampleCompatibilityTest, DrawAndResolve)
 {
     if (!isApplicable())
         return;
+
+    // http://anglebug.com/5270
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsIntelUHD630Mobile() && IsDesktopOpenGL());
 
     static const float kBlue[]  = {0.0f, 0.0f, 1.0f, 1.0f};
     static const float kGreen[] = {0.0f, 1.0f, 0.0f, 1.0f};
@@ -227,9 +226,6 @@ TEST_P(EXTMultisampleCompatibilityTest, DrawAlphaOneAndResolve)
     if (!isApplicable())
         return;
 
-    // TODO: Figure out why this fails on Android.
-    ANGLE_SKIP_TEST_IF(IsAndroid());
-
     // SAMPLE_ALPHA_TO_ONE is specified to transform alpha values of
     // covered samples to 1.0. In order to detect it, we use non-1.0
     // alpha.
@@ -281,11 +277,7 @@ TEST_P(EXTMultisampleCompatibilityTest, DrawAlphaOneAndResolve)
     EXPECT_EQ(0, memcmp(results[0].get(), results[2].get(), kResultSize));
 }
 
-ANGLE_INSTANTIATE_TEST(EXTMultisampleCompatibilityTest,
-                       ES2_OPENGL(),
-                       ES2_OPENGLES(),
-                       ES3_OPENGL(),
-                       ES2_VULKAN());
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(EXTMultisampleCompatibilityTest);
 
 class MultisampleCompatibilityTest : public ANGLETest
 {
@@ -362,8 +354,8 @@ class MultisampleCompatibilityTest : public ANGLETest
 
     bool isApplicable() const
     {
-        return extensionEnabled("GL_ANGLE_framebuffer_multisample") &&
-               extensionEnabled("GL_OES_rgb8_rgba8");
+        return IsGLExtensionEnabled("GL_ANGLE_framebuffer_multisample") &&
+               IsGLExtensionEnabled("GL_OES_rgb8_rgba8");
     }
 
     GLuint mSampleFBO;
@@ -379,7 +371,7 @@ TEST_P(MultisampleCompatibilityTest, DrawCoverageAndResolve)
         return;
 
     // TODO: Figure out why this fails on Android.
-    ANGLE_SKIP_TEST_IF(IsAndroid());
+    ANGLE_SKIP_TEST_IF(IsAndroid() && IsOpenGLES());
 
     ANGLE_GL_PROGRAM(drawRed, essl1_shaders::vs::Simple(), essl1_shaders::fs::Red());
 
@@ -405,11 +397,4 @@ TEST_P(MultisampleCompatibilityTest, DrawCoverageAndResolve)
     }
 }
 
-ANGLE_INSTANTIATE_TEST(MultisampleCompatibilityTest,
-                       ES2_D3D9(),
-                       ES2_OPENGL(),
-                       ES2_OPENGLES(),
-                       ES3_D3D11(),
-                       ES3_OPENGL(),
-                       ES3_OPENGLES(),
-                       ES2_VULKAN());
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(MultisampleCompatibilityTest);

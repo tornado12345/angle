@@ -24,19 +24,19 @@ struct DynamicPromotionParams final : public RenderTestParams
 {
     DynamicPromotionParams() { iterationsPerStep = kIterationsPerStep; }
 
-    std::string suffix() const override;
+    std::string story() const override;
 
     size_t vertexCount = 1024;
 };
 
-std::string DynamicPromotionParams::suffix() const
+std::string DynamicPromotionParams::story() const
 {
-    return RenderTestParams::suffix();
+    return RenderTestParams::story();
 }
 
 std::ostream &operator<<(std::ostream &os, const DynamicPromotionParams &params)
 {
-    os << params.suffix().substr(1);
+    os << params.backendAndStory().substr(1);
     return os;
 }
 
@@ -166,19 +166,10 @@ DynamicPromotionParams DynamicPromotionD3D11Params()
     return params;
 }
 
-DynamicPromotionParams DynamicPromotionD3D9Params()
-{
-    DynamicPromotionParams params;
-    params.eglParameters = egl_platform::D3D9();
-    return params;
-}
-
 TEST_P(DynamicPromotionPerfTest, Run)
 {
     run();
 }
 
-ANGLE_INSTANTIATE_TEST(DynamicPromotionPerfTest,
-                       DynamicPromotionD3D11Params(),
-                       DynamicPromotionD3D9Params());
+ANGLE_INSTANTIATE_TEST(DynamicPromotionPerfTest, DynamicPromotionD3D11Params());
 }  // anonymous namespace

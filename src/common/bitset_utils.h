@@ -21,6 +21,14 @@
 
 namespace angle
 {
+template <typename BitsT, typename ParamT>
+constexpr static BitsT Bit(ParamT x)
+{
+    // It's undefined behavior if the shift size is equal to or larger than the width of the type.
+    ASSERT(static_cast<size_t>(x) < sizeof(BitsT) * 8);
+
+    return (static_cast<BitsT>(1) << static_cast<size_t>(x));
+}
 
 template <size_t N, typename BitsT, typename ParamT = std::size_t>
 class BitSetT final
@@ -77,6 +85,8 @@ class BitSetT final
         std::size_t mCurrentBit;
     };
 
+    using value_type = BitsT;
+
     BitSetT();
     constexpr explicit BitSetT(BitsT value);
 
@@ -127,15 +137,15 @@ class BitSetT final
     Iterator begin() const { return Iterator(*this); }
     Iterator end() const { return Iterator(BitSetT()); }
 
+    constexpr static BitSetT Zero() { return BitSetT(); }
+
+    ParamT first() const;
+
   private:
-    constexpr static BitsT Bit(ParamT x)
-    {
-        return (static_cast<BitsT>(1) << static_cast<size_t>(x));
-    }
     // Produces a mask of ones up to the "x"th bit.
     constexpr static BitsT Mask(std::size_t x)
     {
-        return ((Bit(static_cast<ParamT>(x - 1)) - 1) << 1) + 1;
+        return ((Bit<BitsT>(static_cast<ParamT>(x - 1)) - 1) << 1) + 1;
     }
 
     BitsT mBits;
@@ -195,7 +205,7 @@ IterableBitSet<N>::Iterator::Iterator(const std::bitset<N> &bitset)
     }
     else
     {
-        mOffset = static_cast<unsigned long>(rx::roundUp(N, BitsPerWord));
+        mOffset = static_cast<unsigned long>(rx::roundUpPow2(N, BitsPerWord));
     }
 }
 
@@ -283,7 +293,7 @@ constexpr bool BitSetT<N, BitsT, ParamT>::operator[](ParamT pos) const
 template <size_t N, typename BitsT, typename ParamT>
 bool BitSetT<N, BitsT, ParamT>::test(ParamT pos) const
 {
-    return (mBits & Bit(pos)) != 0;
+    return (mBits & Bit<BitsT>(pos)) != 0;
 }
 
 template <size_t N, typename BitsT, typename ParamT>
@@ -330,7 +340,7 @@ BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::operator|=(const BitSetT &
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::operator^=(const BitSetT &other)
 {
-    mBits = (mBits ^ other.mBits) & Mask(N);
+    mBits = mBits ^ other.mBits;
     return *this;
 }
 
@@ -350,14 +360,14 @@ BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::operator&=(BitsT value)
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::operator|=(BitsT value)
 {
-    mBits |= value;
+    mBits |= value & Mask(N);
     return *this;
 }
 
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::operator^=(BitsT value)
 {
-    mBits ^= value;
+    mBits ^= value & Mask(N);
     return *this;
 }
 
@@ -390,6 +400,7 @@ BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::operator>>=(std::size_t po
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::set()
 {
+    ASSERT(mBits == (mBits & Mask(N)));
     mBits = Mask(N);
     return *this;
 }
@@ -397,9 +408,10 @@ BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::set()
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::set(ParamT pos, bool value)
 {
+    ASSERT(mBits == (mBits & Mask(N)));
     if (value)
     {
-        mBits |= Bit(pos);
+        mBits |= Bit<BitsT>(pos) & Mask(N);
     }
     else
     {
@@ -411,6 +423,7 @@ BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::set(ParamT pos, bool value
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::reset()
 {
+    ASSERT(mBits == (mBits & Mask(N)));
     mBits = 0;
     return *this;
 }
@@ -418,13 +431,15 @@ BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::reset()
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::reset(ParamT pos)
 {
-    mBits &= ~Bit(pos);
+    ASSERT(mBits == (mBits & Mask(N)));
+    mBits &= ~Bit<BitsT>(pos);
     return *this;
 }
 
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::flip()
 {
+    ASSERT(mBits == (mBits & Mask(N)));
     mBits ^= Mask(N);
     return *this;
 }
@@ -432,8 +447,16 @@ BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::flip()
 template <size_t N, typename BitsT, typename ParamT>
 BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::flip(ParamT pos)
 {
-    mBits ^= Bit(pos);
+    ASSERT(mBits == (mBits & Mask(N)));
+    mBits ^= Bit<BitsT>(pos) & Mask(N);
     return *this;
+}
+
+template <size_t N, typename BitsT, typename ParamT>
+ParamT BitSetT<N, BitsT, ParamT>::first() const
+{
+    ASSERT(!none());
+    return static_cast<ParamT>(gl::ScanForward(mBits));
 }
 
 template <size_t N, typename BitsT, typename ParamT>
@@ -446,8 +469,8 @@ BitSetT<N, BitsT, ParamT>::Iterator::Iterator(const BitSetT &bits) : mBitsCopy(b
 }
 
 template <size_t N, typename BitsT, typename ParamT>
-ANGLE_INLINE typename BitSetT<N, BitsT, ParamT>::Iterator &BitSetT<N, BitsT, ParamT>::Iterator::
-operator++()
+ANGLE_INLINE typename BitSetT<N, BitsT, ParamT>::Iterator &
+BitSetT<N, BitsT, ParamT>::Iterator::operator++()
 {
     ASSERT(mBitsCopy.any());
     mBitsCopy.reset(static_cast<ParamT>(mCurrentBit));
@@ -485,13 +508,16 @@ std::size_t BitSetT<N, BitsT, ParamT>::Iterator::getNextBit()
 }
 
 template <size_t N>
+using BitSet8 = BitSetT<N, uint8_t>;
+
+template <size_t N>
+using BitSet16 = BitSetT<N, uint16_t>;
+
+template <size_t N>
 using BitSet32 = BitSetT<N, uint32_t>;
 
-// ScanForward for 64-bits requires a 64-bit implementation.
-#if defined(ANGLE_IS_64_BIT_CPU)
 template <size_t N>
 using BitSet64 = BitSetT<N, uint64_t>;
-#endif  // defined(ANGLE_IS_64_BIT_CPU)
 
 namespace priv
 {

@@ -68,14 +68,12 @@ class ErrorMessagesTest : public ANGLETest
         setConfigAlphaBits(8);
         setWebGLCompatibilityEnabled(true);
     }
-
-    void SetUp() override { ANGLETest::SetUp(); }
 };
 
 // Verify functionality of WebGL specific errors using KHR_debug
 TEST_P(ErrorMessagesTest, ErrorMessages)
 {
-    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_KHR_debug"));
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_KHR_debug"));
 
     glEnable(GL_DEBUG_OUTPUT);
 
@@ -114,6 +112,7 @@ ANGLE_INSTANTIATE_TEST(ErrorMessagesTest,
                        ES2_D3D9(),
                        ES2_D3D11(),
                        ES3_D3D11(),
+                       ES2_METAL(),
                        ES2_OPENGL(),
                        ES3_OPENGL(),
                        ES2_OPENGLES(),

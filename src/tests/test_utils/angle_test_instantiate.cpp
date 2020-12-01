@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2014 The ANGLE Project Authors. All rights reserved.
+// Copyright 2014 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,59 +9,65 @@
 
 #include "test_utils/angle_test_instantiate.h"
 
+#include <algorithm>
+#include <array>
 #include <iostream>
 #include <map>
 
 #include "angle_gl.h"
+#include "common/debug.h"
 #include "common/platform.h"
+#include "common/system_utils.h"
+#include "common/third_party/base/anglebase/no_destructor.h"
 #include "gpu_info_util/SystemInfo.h"
 #include "test_utils/angle_test_configs.h"
 #include "util/EGLWindow.h"
 #include "util/OSWindow.h"
-#include "util/system_utils.h"
+#include "util/test_utils.h"
 
 #if defined(ANGLE_PLATFORM_WINDOWS)
+#    include <VersionHelpers.h>
 #    include "util/windows/WGLWindow.h"
 #endif  // defined(ANGLE_PLATFORM_WINDOWS)
+
+#if defined(ANGLE_PLATFORM_APPLE)
+#    include "test_utils/angle_test_instantiate_apple.h"
+#endif
 
 namespace angle
 {
 namespace
 {
-SystemInfo *GetTestSystemInfo()
-{
-    static SystemInfo *sSystemInfo = nullptr;
-    if (sSystemInfo == nullptr)
-    {
-        sSystemInfo = new SystemInfo;
-        GetSystemInfo(sSystemInfo);
-    }
-    return sSystemInfo;
-}
-
-bool IsANGLEConfigSupported(const PlatformParameters &param, OSWindow *osWindow)
+bool IsAngleEGLConfigSupported(const PlatformParameters &param, OSWindow *osWindow)
 {
     std::unique_ptr<angle::Library> eglLibrary;
 
 #if defined(ANGLE_USE_UTIL_LOADER)
-    eglLibrary.reset(angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME));
+    eglLibrary.reset(
+        angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME, angle::SearchType::ApplicationDir));
 #endif
 
-    EGLWindow *eglWindow =
-        EGLWindow::New(param.majorVersion, param.minorVersion, param.eglParameters);
-    bool result = eglWindow->initializeGL(osWindow, eglLibrary.get());
+    EGLWindow *eglWindow = EGLWindow::New(param.majorVersion, param.minorVersion);
+    ConfigParameters configParams;
+    bool result =
+        eglWindow->initializeGL(osWindow, eglLibrary.get(), angle::GLESDriverType::AngleEGL,
+                                param.eglParameters, configParams);
     eglWindow->destroyGL();
     EGLWindow::Delete(&eglWindow);
     return result;
 }
 
-bool IsWGLConfigSupported(const PlatformParameters &param, OSWindow *osWindow)
+bool IsSystemWGLConfigSupported(const PlatformParameters &param, OSWindow *osWindow)
 {
 #if defined(ANGLE_PLATFORM_WINDOWS) && defined(ANGLE_USE_UTIL_LOADER)
-    std::unique_ptr<angle::Library> openglLibrary(angle::OpenSharedLibrary("opengl32"));
+    std::unique_ptr<angle::Library> openglLibrary(
+        angle::OpenSharedLibrary("opengl32", angle::SearchType::SystemDir));
 
     WGLWindow *wglWindow = WGLWindow::New(param.majorVersion, param.minorVersion);
-    bool result          = wglWindow->initializeGL(osWindow, openglLibrary.get());
+    ConfigParameters configParams;
+    bool result =
+        wglWindow->initializeGL(osWindow, openglLibrary.get(), angle::GLESDriverType::SystemWGL,
+                                param.eglParameters, configParams);
     wglWindow->destroyGL();
     WGLWindow::Delete(&wglWindow);
     return result;
@@ -70,12 +76,123 @@ bool IsWGLConfigSupported(const PlatformParameters &param, OSWindow *osWindow)
 #endif  // defined(ANGLE_PLATFORM_WINDOWS) && defined(ANGLE_USE_UTIL_LOADER)
 }
 
-bool IsNativeConfigSupported(const PlatformParameters &param, OSWindow *osWindow)
+bool IsSystemEGLConfigSupported(const PlatformParameters &param, OSWindow *osWindow)
 {
-    // Not yet implemented.
+#if defined(ANGLE_USE_UTIL_LOADER)
+    std::unique_ptr<angle::Library> eglLibrary;
+
+    eglLibrary.reset(OpenSharedLibraryWithExtension(GetNativeEGLLibraryNameWithExtension()));
+
+    EGLWindow *eglWindow = EGLWindow::New(param.majorVersion, param.minorVersion);
+    ConfigParameters configParams;
+    bool result =
+        eglWindow->initializeGL(osWindow, eglLibrary.get(), angle::GLESDriverType::SystemEGL,
+                                param.eglParameters, configParams);
+    eglWindow->destroyGL();
+    EGLWindow::Delete(&eglWindow);
+    return result;
+#else
+    return false;
+#endif
+}
+
+bool IsAndroidDevice(const std::string &deviceName)
+{
+    if (!IsAndroid())
+    {
+        return false;
+    }
+    SystemInfo *systemInfo = GetTestSystemInfo();
+    if (systemInfo->machineModelName == deviceName)
+    {
+        return true;
+    }
     return false;
 }
+
+GPUDeviceInfo *GetActiveGPUDeviceInfo()
+{
+    SystemInfo *systemInfo = GetTestSystemInfo();
+    // Unfortunately sometimes GPU info collection can fail.
+    if (systemInfo->gpus.empty())
+    {
+        return nullptr;
+    }
+    return &systemInfo->gpus[systemInfo->activeGPUIndex];
+}
+
+bool HasSystemVendorID(VendorID vendorID)
+{
+    GPUDeviceInfo *gpuInfo = GetActiveGPUDeviceInfo();
+
+    return gpuInfo && gpuInfo->vendorId == vendorID;
+}
+
+bool HasSystemDeviceID(VendorID vendorID, DeviceID deviceID)
+{
+    GPUDeviceInfo *gpuInfo = GetActiveGPUDeviceInfo();
+
+    return gpuInfo && gpuInfo->vendorId == vendorID && gpuInfo->deviceId == deviceID;
+}
+
+using ParamAvailabilityCache = std::map<PlatformParameters, bool>;
+
+ParamAvailabilityCache &GetAvailabilityCache()
+{
+    static angle::base::NoDestructor<std::unique_ptr<ParamAvailabilityCache>>
+        sParamAvailabilityCache(new ParamAvailabilityCache());
+    return **sParamAvailabilityCache;
+}
+
+constexpr size_t kMaxConfigNameLen = 100;
+std::array<char, kMaxConfigNameLen> gSelectedConfig;
 }  // namespace
+
+bool gEnableANGLEPerTestCaptureLabel = false;
+
+bool IsConfigSelected()
+{
+    return gSelectedConfig[0] != 0;
+}
+
+#if !defined(ANGLE_PLATFORM_APPLE)
+// For Apple platform, see angle_test_instantiate_apple.mm
+bool IsMetalTextureSwizzleAvailable()
+{
+    return false;
+}
+#endif
+
+SystemInfo *GetTestSystemInfo()
+{
+    static SystemInfo *sSystemInfo = nullptr;
+    if (sSystemInfo == nullptr)
+    {
+        sSystemInfo = new SystemInfo;
+        if (!GetSystemInfo(sSystemInfo))
+        {
+            std::cerr << "Warning: incomplete system info collection.\n";
+        }
+
+        // On dual-GPU Macs we want the active GPU to always appear to be the
+        // high-performance GPU for tests.
+        // We can call the generic GPU info collector which selects the
+        // non-Intel GPU as the active one on dual-GPU machines.
+        if (IsOSX())
+        {
+            GetDualGPUInfo(sSystemInfo);
+        }
+
+        // Print complete system info when available.
+        // Seems to trip up Android test expectation parsing.
+        // Also don't print info when a config is selected to prevent test spam.
+        if (!IsAndroid() && !IsConfigSelected())
+        {
+            PrintSystemInfo(*sSystemInfo);
+        }
+    }
+    return sSystemInfo;
+}
 
 bool IsAndroid()
 {
@@ -104,9 +221,35 @@ bool IsOSX()
 #endif
 }
 
+bool IsARM64()
+{
+// _M_ARM64 is Windows-specific, while __aarch64__ is for other platforms.
+#if defined(_M_ARM64) || defined(__aarch64__)
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool IsOzone()
 {
-#if defined(USE_OZONE)
+#if defined(USE_OZONE) && (defined(USE_X11) || defined(ANGLE_USE_VULKAN_DISPLAY))
+    // We do not have a proper support for Ozone/Linux yet. Still, we need to figure out how to
+    // properly initialize tests and differentiate between X11 and Wayland. Probably, passing a
+    // command line argument could be sufficient. At the moment, run tests only for X11 backend
+    // as we don't have Wayland support in Angle. Yes, this is a bit weird to return false, but
+    // it makes it possible to continue angle tests with X11 regardless of the Chromium config
+    // for linux, which is use_x11 && use_ozone.  Also, IsOzone is a bit vague now. It was only
+    // expected that angle could run with ozone/drm backend for ChromeOS. And returning true
+    // for desktop Linux when USE_OZONE && USE_X11 are both defined results in incorrect tests'
+    // expectations. We should also rework them and make IsOzone less vague.
+    //
+    // TODO(crbug.com/angleproject/4977): make it possible to switch between X11 and Wayland on
+    // Ozone/Linux builds. Probably, it's possible to identify the WAYLAND backend by checking
+    // the WAYLAND_DISPLAY or XDG_SESSION_TYPE env vars. And also make the IsOzone method less
+    // vague (read the comment above).
+    return false;
+#elif defined(USE_OZONE)
     return true;
 #else
     return false;
@@ -122,6 +265,15 @@ bool IsWindows()
 #endif
 }
 
+bool IsWindows7()
+{
+#if defined(ANGLE_PLATFORM_WINDOWS)
+    return ::IsWindows7OrGreater() && !::IsWindows8OrGreater();
+#else
+    return false;
+#endif
+}
+
 bool IsFuchsia()
 {
 #if defined(ANGLE_PLATFORM_FUCHSIA)
@@ -131,9 +283,77 @@ bool IsFuchsia()
 #endif
 }
 
-bool IsConfigWhitelisted(const SystemInfo &systemInfo, const PlatformParameters &param)
+bool IsNexus5X()
 {
-    VendorID vendorID = systemInfo.gpus[systemInfo.primaryGPUIndex].vendorId;
+    return IsAndroidDevice("Nexus 5X");
+}
+
+bool IsNexus9()
+{
+    return IsAndroidDevice("Nexus 9");
+}
+
+bool IsPixelXL()
+{
+    return IsAndroidDevice("Pixel XL");
+}
+
+bool IsPixel2()
+{
+    return IsAndroidDevice("Pixel 2");
+}
+
+bool IsPixel2XL()
+{
+    return IsAndroidDevice("Pixel 2 XL");
+}
+
+bool IsNVIDIAShield()
+{
+    return IsAndroidDevice("SHIELD Android TV");
+}
+
+bool IsIntel()
+{
+    return HasSystemVendorID(kVendorID_Intel);
+}
+
+bool IsIntelUHD630Mobile()
+{
+    return HasSystemDeviceID(kVendorID_Intel, kDeviceID_UHD630Mobile);
+}
+
+bool IsAMD()
+{
+    return HasSystemVendorID(kVendorID_AMD);
+}
+
+bool IsARM()
+{
+    return HasSystemVendorID(kVendorID_ARM);
+}
+
+bool IsSwiftshaderDevice()
+{
+    return HasSystemDeviceID(kVendorID_GOOGLE, kDeviceID_Swiftshader);
+}
+
+bool IsNVIDIA()
+{
+#if defined(ANGLE_PLATFORM_ANDROID)
+    // NVIDIA Shield cannot detect vendor ID (http://anglebug.com/3541)
+    if (IsNVIDIAShield())
+    {
+        return true;
+    }
+#endif
+    return HasSystemVendorID(kVendorID_NVIDIA);
+}
+
+bool IsConfigAllowlisted(const SystemInfo &systemInfo, const PlatformParameters &param)
+{
+    VendorID vendorID =
+        systemInfo.gpus.empty() ? 0 : systemInfo.gpus[systemInfo.activeGPUIndex].vendorId;
 
     // We support the default and null back-ends on every platform.
     if (param.driver == GLESDriverType::AngleEGL)
@@ -144,13 +364,18 @@ bool IsConfigWhitelisted(const SystemInfo &systemInfo, const PlatformParameters 
             return true;
     }
 
-#if ANGLE_VULKAN_CONFORMANT_CONFIGS_ONLY
-    // Vulkan ES 3.0 is not yet supported.
-    if (param.majorVersion > 2 && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+    // TODO: http://crbug.com/swiftshader/145
+    // Swiftshader does not currently have all the robustness features
+    // we need for ANGLE. In particular, it is unable to detect and recover
+    // from infinitely looping shaders. That bug is the tracker for fixing
+    // that and when resolved we can remove the following code.
+    // This test will disable tests marked with the config WithRobustness
+    // when run with the swiftshader Vulkan driver and on Android.
+    if ((param.isSwiftshader() || IsSwiftshaderDevice()) &&
+        param.eglParameters.robustness == EGL_TRUE)
     {
         return false;
     }
-#endif
 
     if (IsWindows())
     {
@@ -161,8 +386,17 @@ bool IsConfigWhitelisted(const SystemInfo &systemInfo, const PlatformParameters 
                 {
                     case EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE:
                     case EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE:
+                        return true;
                     case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
+                        // Note we disable AMD OpenGL testing on Windows due to using a very old and
+                        // outdated card with many driver bugs. See http://anglebug.com/5123
+                        return !IsAMD();
                     case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
+                        if (IsARM64())
+                        {
+                            return param.getDeviceType() ==
+                                   EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE;
+                        }
                         return true;
                     case EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE:
                         // ES 3.1+ back-end is not supported properly.
@@ -173,62 +407,22 @@ bool IsConfigWhitelisted(const SystemInfo &systemInfo, const PlatformParameters 
                         }
 
                         // Win ES emulation is currently only supported on NVIDIA.
-                        return vendorID == kVendorID_Nvidia;
+                        return IsNVIDIA(vendorID);
                     default:
                         return false;
                 }
             case GLESDriverType::SystemWGL:
                 // AMD does not support the ES compatibility extensions.
-                return vendorID != kVendorID_AMD;
+                return !IsAMD(vendorID);
             default:
                 return false;
         }
     }
 
+#if defined(ANGLE_PLATFORM_APPLE)
     if (IsOSX())
     {
-        // Currently we only support the OpenGL back-end on OSX.
-        if (param.driver != GLESDriverType::AngleEGL)
-        {
-            return false;
-        }
-
-        // OSX does not support ES 3.1 features.
-        if (param.majorVersion == 3 && param.minorVersion > 0)
-        {
-            return false;
-        }
-
-        return (param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE);
-    }
-
-    if (IsFuchsia())
-    {
-        // Currently we only support the Vulkan back-end on Fuchsia.
-        if (param.driver != GLESDriverType::AngleEGL)
-        {
-            return false;
-        }
-
-        return (param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE);
-    }
-
-    if (IsOzone())
-    {
-        // Currently we only support the GLES back-end on Ozone.
-        if (param.driver != GLESDriverType::AngleEGL)
-            return false;
-
-        // ES 3 configs do not work properly on Ozone.
-        if (param.majorVersion > 2)
-            return false;
-
-        return (param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE);
-    }
-
-    if (IsLinux())
-    {
-        // Currently we support the OpenGL and Vulkan back-ends on Linux.
+        // We do not support non-ANGLE bindings on OSX.
         if (param.driver != GLESDriverType::AngleEGL)
         {
             return false;
@@ -237,9 +431,89 @@ bool IsConfigWhitelisted(const SystemInfo &systemInfo, const PlatformParameters 
         switch (param.getRenderer())
         {
             case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
-            case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
-                // Note that system info collection depends on Vulkan support.
+                // ES 3.1+ back-end is not supported properly.
+                if (param.majorVersion == 3 && param.minorVersion > 0)
+                {
+                    return false;
+                }
                 return true;
+            case EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE:
+                if (!IsMetalRendererAvailable())
+                {
+                    return false;
+                }
+                return true;
+            case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
+                // OSX does not support native vulkan
+                return param.getDeviceType() == EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE;
+            default:
+                return false;
+        }
+    }
+#endif  // #if defined(ANGLE_PLATFORM_APPLE)
+
+    if (IsFuchsia())
+    {
+        // We do not support non-ANGLE bindings on Fuchsia.
+        if (param.driver != GLESDriverType::AngleEGL)
+        {
+            return false;
+        }
+
+        // ES 3 configs do not work properly on Fuchsia ARM.
+        // TODO(anglebug.com/4352): Investigate missing features.
+        if (param.majorVersion > 2 && IsARM())
+            return false;
+
+        // Loading swiftshader is not brought up on Fuchsia.
+        // TODO(anglebug.com/4353): Support loading swiftshader vulkan ICD.
+        if (param.getDeviceType() == EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE)
+            return false;
+
+        // Currently we only support the Vulkan back-end on Fuchsia.
+        return (param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE);
+    }
+
+    if (IsOzone())
+    {
+        // We do not support non-ANGLE bindings on Ozone.
+        if (param.driver != GLESDriverType::AngleEGL)
+            return false;
+
+        // ES 3 configs do not work properly on Ozone.
+        if (param.majorVersion > 2)
+            return false;
+
+        // Currently we only support the GLES back-end on Ozone.
+        return (param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE);
+    }
+
+    if (IsLinux() || IsAndroid())
+    {
+        // We do not support WGL bindings on Linux/Android. We do support system EGL.
+        switch (param.driver)
+        {
+            case GLESDriverType::SystemEGL:
+                return param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
+            case GLESDriverType::SystemWGL:
+                return false;
+            default:
+                break;
+        }
+    }
+
+    if (IsLinux())
+    {
+        ASSERT(param.driver == GLESDriverType::AngleEGL);
+
+        // Currently we support the OpenGL and Vulkan back-ends on Linux.
+        switch (param.getRenderer())
+        {
+            case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
+                return true;
+            case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
+                // http://issuetracker.google.com/173004081
+                return !IsIntel() || param.eglParameters.asyncCommandQueueFeatureVulkan != EGL_TRUE;
             default:
                 return false;
         }
@@ -247,23 +521,27 @@ bool IsConfigWhitelisted(const SystemInfo &systemInfo, const PlatformParameters 
 
     if (IsAndroid())
     {
-        // Currently we support the GLES and Vulkan back-ends on Linux.
-        if (param.driver != GLESDriverType::AngleEGL)
-        {
-            return false;
-        }
+        ASSERT(param.driver == GLESDriverType::AngleEGL);
 
-        // Some Android devices don't support backing 3.2 contexts. We should refine this to only
-        // exclude the problematic devices.
+        // Nexus Android devices don't support backing 3.2 contexts
         if (param.eglParameters.majorVersion == 3 && param.eglParameters.minorVersion == 2)
         {
-            return false;
+            if (IsNexus5X())
+            {
+                return false;
+            }
         }
 
+        // Currently we support the GLES and Vulkan back-ends on Android.
         switch (param.getRenderer())
         {
             case EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE:
             case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
+                // Swiftshader's vulkan frontend doesn't build on Android.
+                if (param.getDeviceType() == EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE)
+                {
+                    return false;
+                }
                 return true;
             default:
                 return false;
@@ -283,13 +561,13 @@ bool IsConfigSupported(const PlatformParameters &param)
         switch (param.driver)
         {
             case GLESDriverType::AngleEGL:
-                result = IsANGLEConfigSupported(param, osWindow);
+                result = IsAngleEGLConfigSupported(param, osWindow);
                 break;
             case GLESDriverType::SystemEGL:
-                result = IsNativeConfigSupported(param, osWindow);
+                result = IsSystemEGLConfigSupported(param, osWindow);
                 break;
             case GLESDriverType::SystemWGL:
-                result = IsWGLConfigSupported(param, osWindow);
+                result = IsSystemWGLConfigSupported(param, osWindow);
                 break;
         }
 
@@ -302,6 +580,15 @@ bool IsConfigSupported(const PlatformParameters &param)
 
 bool IsPlatformAvailable(const PlatformParameters &param)
 {
+    // Disable "null" device when not on ANGLE or in D3D9.
+    if (param.getDeviceType() == EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE)
+    {
+        if (param.driver != GLESDriverType::AngleEGL)
+            return false;
+        if (param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE)
+            return false;
+    }
+
     switch (param.getRenderer())
     {
         case EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE:
@@ -336,6 +623,13 @@ bool IsPlatformAvailable(const PlatformParameters &param)
             break;
 #endif
 
+        case EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE:
+#if !defined(ANGLE_ENABLE_METAL)
+            return false;
+#else
+            break;
+#endif
+
         case EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE:
 #ifndef ANGLE_ENABLE_NULL
             return false;
@@ -347,35 +641,80 @@ bool IsPlatformAvailable(const PlatformParameters &param)
             return false;
     }
 
-    static std::map<PlatformParameters, bool> paramAvailabilityCache;
-    auto iter = paramAvailabilityCache.find(param);
-    if (iter != paramAvailabilityCache.end())
+    bool result = false;
+
+    auto iter = GetAvailabilityCache().find(param);
+    if (iter != GetAvailabilityCache().end())
     {
-        return iter->second;
+        result = iter->second;
     }
     else
     {
-        const SystemInfo *systemInfo = GetTestSystemInfo();
-
-        bool result = false;
-        if (systemInfo)
+        if (IsConfigSelected())
         {
-            result = IsConfigWhitelisted(*systemInfo, param);
+            std::stringstream strstr;
+            strstr << param;
+            if (strstr.str() == std::string(gSelectedConfig.data()))
+            {
+                result = true;
+            }
         }
         else
         {
-            result = IsConfigSupported(param);
+            const SystemInfo *systemInfo = GetTestSystemInfo();
+
+            if (systemInfo)
+            {
+                result = IsConfigAllowlisted(*systemInfo, param);
+            }
+            else
+            {
+                result = IsConfigSupported(param);
+            }
         }
 
-        paramAvailabilityCache[param] = result;
+        GetAvailabilityCache()[param] = result;
 
-        if (!result)
+        // Enable this unconditionally to print available platforms.
+        if (IsConfigSelected())
+        {
+            if (result)
+            {
+                std::cout << "Test Config: " << param << "\n";
+            }
+        }
+        else if (!result)
         {
             std::cout << "Skipping tests using configuration " << param
-                      << " because it is not available." << std::endl;
+                      << " because it is not available.\n";
         }
-
-        return result;
     }
+    return result;
+}
+
+std::vector<std::string> GetAvailableTestPlatformNames()
+{
+    std::vector<std::string> platformNames;
+
+    for (const auto &iter : GetAvailabilityCache())
+    {
+        if (iter.second)
+        {
+            std::stringstream strstr;
+            strstr << iter.first;
+            platformNames.push_back(strstr.str());
+        }
+    }
+
+    // Keep the list sorted.
+    std::sort(platformNames.begin(), platformNames.end());
+
+    return platformNames;
+}
+
+void SetSelectedConfig(const char *selectedConfig)
+{
+    gSelectedConfig.fill(0);
+    strncpy(gSelectedConfig.data(), selectedConfig, kMaxConfigNameLen - 1);
 }
 }  // namespace angle

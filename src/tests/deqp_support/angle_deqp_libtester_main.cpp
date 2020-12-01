@@ -10,9 +10,10 @@
 
 #include "angle_deqp_libtester.h"
 #include "common/angleutils.h"
+#include "common/system_utils.h"
 #include "deMath.h"
 #include "deUniquePtr.hpp"
-#include "platform/Platform.h"
+#include "platform/PlatformMethods.h"
 #include "tcuApp.hpp"
 #include "tcuCommandLine.hpp"
 #include "tcuDefs.hpp"
@@ -20,19 +21,8 @@
 #include "tcuRandomOrderExecutor.h"
 #include "tcuResource.hpp"
 #include "tcuTestLog.hpp"
-#include "util/system_utils.h"
 
-#if (DE_OS == DE_OS_WIN32)
-#    include <Windows.h>
-#elif (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_OSX)
-#    include <sys/stat.h>
-#    include <sys/types.h>
-#    include <sys/unistd.h>
-#elif (DE_OS == DE_OS_ANDROID)
-#    include <sys/stat.h>
-#endif
-
-tcu::Platform *CreateANGLEPlatform(angle::LogErrorFunc logErrorFunc);
+tcu::Platform *CreateANGLEPlatform(angle::LogErrorFunc logErrorFunc, uint32_t preRotation);
 
 namespace
 {
@@ -45,61 +35,27 @@ tcu::TestContext *g_testCtx          = nullptr;
 tcu::TestPackageRoot *g_root         = nullptr;
 tcu::RandomOrderExecutor *g_executor = nullptr;
 
-const char *g_dEQPDataSearchDirs[] = {
-    "../../../third_party/deqp/src/data",
-    "../../sdcard/chromium_tests_root/third_party/angle/third_party/deqp/src/data",
-    "../../third_party/angle/third_party/deqp/src/data",
-    "../../third_party/deqp/src/data",
-    "../third_party/deqp/src/data",
-    "data",
-    "third_party/deqp/src/data",
+const char *kDataPaths[] = {
+    ".",
+    "../../sdcard/chromium_tests_root",
+    "../../sdcard/chromium_tests_root/third_party/angle/third_party/VK-GL-CTS/src",
+    "../../third_party/angle/third_party/VK-GL-CTS/src",
+    "../../third_party/VK-GL-CTS/src",
+    "third_party/VK-GL-CTS/src",
 };
-
-// TODO(jmadill): upstream to dEQP?
-#if (DE_OS == DE_OS_WIN32)
-deBool deIsDir(const char *filename)
-{
-    WIN32_FILE_ATTRIBUTE_DATA fileInformation;
-
-    BOOL result = GetFileAttributesExA(filename, GetFileExInfoStandard, &fileInformation);
-    if (result)
-    {
-        DWORD attribs = fileInformation.dwFileAttributes;
-        return (attribs != INVALID_FILE_ATTRIBUTES) && ((attribs & FILE_ATTRIBUTE_DIRECTORY) > 0);
-    }
-
-    return false;
-}
-#elif (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_OSX) || (DE_OS == DE_OS_ANDROID)
-deBool deIsDir(const char *filename)
-{
-    struct stat st;
-    int result = stat(filename, &st);
-    return result == 0 && ((st.st_mode & S_IFDIR) == S_IFDIR);
-}
-#else
-#    error TODO(jmadill): support other platforms
-#endif
 
 bool FindDataDir(std::string *dataDirOut)
 {
-    for (auto searchDir : g_dEQPDataSearchDirs)
+    for (const char *dataPath : kDataPaths)
     {
-        if (deIsDir((std::string(searchDir) + "/gles2").c_str()))
-        {
-            *dataDirOut = searchDir;
-            return true;
-        }
-
         std::stringstream dirStream;
-        dirStream << angle::GetExecutableDirectory() << "/" << searchDir;
-        std::string dataDir = dirStream.str();
-        dirStream << "/gles2";
-        std::string searchPath = dirStream.str();
+        dirStream << angle::GetExecutableDirectory() << "/" << dataPath << "/"
+                  << ANGLE_DEQP_DATA_DIR;
+        std::string candidateDataDir = dirStream.str();
 
-        if (deIsDir(searchPath.c_str()))
+        if (angle::IsDirectory(candidateDataDir.c_str()))
         {
-            *dataDirOut = dataDir;
+            *dataDirOut = candidateDataDir;
             return true;
         }
     }
@@ -121,7 +77,8 @@ std::string GetLogFileName(std::string deqpDataDir)
 
 ANGLE_LIBTESTER_EXPORT bool deqp_libtester_init_platform(int argc,
                                                          const char *argv[],
-                                                         void *logErrorFunc)
+                                                         void *logErrorFunc,
+                                                         uint32_t preRotation)
 {
     try
     {
@@ -129,7 +86,8 @@ ANGLE_LIBTESTER_EXPORT bool deqp_libtester_init_platform(int argc,
         // Set stdout to line-buffered mode (will be fully buffered by default if stdout is pipe).
         setvbuf(stdout, DE_NULL, _IOLBF, 4 * 1024);
 #endif
-        g_platform = CreateANGLEPlatform(reinterpret_cast<angle::LogErrorFunc>(logErrorFunc));
+        g_platform =
+            CreateANGLEPlatform(reinterpret_cast<angle::LogErrorFunc>(logErrorFunc), preRotation);
 
         if (!deSetRoundingMode(DE_ROUNDINGMODE_TO_NEAREST_EVEN))
         {
@@ -163,7 +121,7 @@ ANGLE_LIBTESTER_EXPORT bool deqp_libtester_init_platform(int argc,
 // Exported to the tester app.
 ANGLE_LIBTESTER_EXPORT int deqp_libtester_main(int argc, const char *argv[])
 {
-    if (!deqp_libtester_init_platform(argc, argv, nullptr))
+    if (!deqp_libtester_init_platform(argc, argv, nullptr, 0))
     {
         tcu::die("Could not initialize the dEQP platform");
     }
@@ -210,7 +168,7 @@ ANGLE_LIBTESTER_EXPORT void deqp_libtester_shutdown_platform()
 ANGLE_LIBTESTER_EXPORT TestResult deqp_libtester_run(const char *caseName)
 {
     const char *emptyString = "";
-    if (g_platform == nullptr && !deqp_libtester_init_platform(1, &emptyString, nullptr))
+    if (g_platform == nullptr && !deqp_libtester_init_platform(1, &emptyString, nullptr, 0))
     {
         tcu::die("Failed to initialize platform.");
     }

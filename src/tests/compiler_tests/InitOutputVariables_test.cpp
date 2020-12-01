@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2017 The ANGLE Project Authors. All rights reserved.
+// Copyright 2017 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -66,7 +66,7 @@ bool AreLValuesTheSame(TIntermTyped *expected, TIntermTyped *candidate)
 
 TIntermTyped *CreateLValueNode(const ImmutableString &lValueName, const TType &type)
 {
-    // We're using a dummy symbol table here, don't need to assign proper symbol ids to these nodes.
+    // We're using a mock symbol table here, don't need to assign proper symbol ids to these nodes.
     TSymbolTable symbolTable;
     TVariable *variable =
         new TVariable(&symbolTable, lValueName, new TType(type), SymbolType::UserDefined);
@@ -81,7 +81,7 @@ ExpectedLValues CreateIndexedLValueNodeList(const ImmutableString &lValueName,
     TType *arrayType = new TType(elementType);
     arrayType->makeArray(arraySize);
 
-    // We're using a dummy symbol table here, don't need to assign proper symbol ids to these nodes.
+    // We're using a mock symbol table here, don't need to assign proper symbol ids to these nodes.
     TSymbolTable symbolTable;
     TVariable *variable =
         new TVariable(&symbolTable, lValueName, arrayType, SymbolType::UserDefined);

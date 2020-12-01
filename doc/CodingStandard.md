@@ -30,9 +30,6 @@ This will catch most of the trivial formatting errors and save you time.
 
 ### [Other C++ Features](https://google.github.io/styleguide/cppguide.html#Other_C++_Features)
 
-*   {DEV} all parameters passed by reference, except for STL containers (e.g.
-    std::vector, std::list), must be labeled `const`. For return parameters
-    other than STL containers, use a pointer.
 *   {DO} avoid use of default arguments.
 *   {DONT} use C++ exceptions, they are disabled in the builds and not caught.
 *   {DO} use nullptr (instead of 0 or NULL) for pointers.
@@ -69,9 +66,11 @@ underscore and use CamelCase.
 use CamelCase (chosen for consistency)
 * {DO} Constants: start with a **`k`** and use CamelCase
 * Namespaces: short names. use all lower case
-* Enum Names: use class enums when possible. The values should be uppercase with underscores or CamelCase.
+* {DEV} Enum Names: use strongly typed class enums when possible. Use CamelCase for class enum members. See [official docs][EnumsOfficial].
 * Macros: all uppercase with underscores
 * Exceptions to naming: use common sense!
+
+[EnumsOfficial]: https://google.github.io/styleguide/cppguide.html#Enumerator_Names
 
 ### [Comments](https://google.github.io/styleguide/cppguide.html#Comments)
 
@@ -154,3 +153,24 @@ const string &str;
 
 *   If modifying pre-existing code that does not match the standard, the altered
     portions of the code should be changed to match the standard.
+
+### Generated Source Files
+
+Prefer storing generated sources as baked files in the repository. Avoid using
+GN actions to run Python scripts.
+
+**Definition:**
+
+Sometimes helper scripts can create compilable sources more easily from XML or
+JSON data sources than maintaining source files by hand. These scripts are often
+written in Python and output generated sources.
+
+**Decision**
+
+Storing generated sources in the repository makes integration easier for non-GN
+users. Python scripts can be expensive and slow to run at compile-time.
+Generated sources can be a pain point for messing up builds.
+
+It could be possible to solve the build clobbering problem. And we could replace
+Python with something faster. But to allow for easier integration with our tools
+and customers we should bake generated files into the repository.

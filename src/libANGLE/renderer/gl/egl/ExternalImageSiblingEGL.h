@@ -19,9 +19,10 @@ class ExternalImageSiblingEGL : public ExternalImageSiblingImpl
 {
   public:
     ExternalImageSiblingEGL() {}
-    virtual ~ExternalImageSiblingEGL() {}
+    ~ExternalImageSiblingEGL() override {}
 
     virtual EGLClientBuffer getBuffer() const = 0;
+    virtual void getImageCreationAttributes(std::vector<EGLint> *outAttributes) const {}
 };
 
 }  // namespace rx

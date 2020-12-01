@@ -12,13 +12,13 @@
 #include "common/debug.h"
 
 #include "libANGLE/Context.h"
+#include "libANGLE/renderer/OverlayImpl.h"
 #include "libANGLE/renderer/null/BufferNULL.h"
 #include "libANGLE/renderer/null/CompilerNULL.h"
 #include "libANGLE/renderer/null/DisplayNULL.h"
 #include "libANGLE/renderer/null/FenceNVNULL.h"
 #include "libANGLE/renderer/null/FramebufferNULL.h"
 #include "libANGLE/renderer/null/ImageNULL.h"
-#include "libANGLE/renderer/null/PathNULL.h"
 #include "libANGLE/renderer/null/ProgramNULL.h"
 #include "libANGLE/renderer/null/ProgramPipelineNULL.h"
 #include "libANGLE/renderer/null/QueryNULL.h"
@@ -67,36 +67,40 @@ ContextNULL::ContextNULL(const gl::State &state,
     ASSERT(mAllocationTracker != nullptr);
 
     mExtensions                        = gl::Extensions();
-    mExtensions.fence                  = true;
+    mExtensions.fenceNV                = true;
+    mExtensions.framebufferBlit        = true;
     mExtensions.instancedArraysANGLE   = true;
     mExtensions.instancedArraysEXT     = true;
-    mExtensions.pixelBufferObject      = true;
-    mExtensions.mapBuffer              = true;
+    mExtensions.pixelBufferObjectNV    = true;
+    mExtensions.mapBufferOES           = true;
     mExtensions.mapBufferRange         = true;
     mExtensions.copyTexture            = true;
     mExtensions.copyCompressedTexture  = true;
     mExtensions.textureRectangle       = true;
     mExtensions.textureUsage           = true;
-    mExtensions.vertexArrayObject      = true;
+    mExtensions.vertexArrayObjectOES   = true;
     mExtensions.debugMarker            = true;
     mExtensions.translatedShaderSource = true;
 
-    mExtensions.textureStorage             = true;
-    mExtensions.rgb8rgba8                  = true;
-    mExtensions.textureCompressionDXT1     = true;
-    mExtensions.textureCompressionDXT3     = true;
-    mExtensions.textureCompressionDXT5     = true;
-    mExtensions.textureCompressionS3TCsRGB = true;
-    mExtensions.textureCompressionASTCHDR  = true;
-    mExtensions.textureCompressionASTCLDR  = true;
-    mExtensions.compressedETC1RGB8Texture  = true;
-    mExtensions.lossyETCDecode             = true;
-    mExtensions.geometryShader             = true;
+    mExtensions.textureStorage               = true;
+    mExtensions.rgb8rgba8OES                 = true;
+    mExtensions.textureCompressionDXT1       = true;
+    mExtensions.textureCompressionDXT3       = true;
+    mExtensions.textureCompressionDXT5       = true;
+    mExtensions.textureCompressionS3TCsRGB   = true;
+    mExtensions.textureCompressionASTCHDRKHR = true;
+    mExtensions.textureCompressionASTCLDRKHR = true;
+    mExtensions.textureCompressionASTCOES    = true;
+    mExtensions.compressedETC1RGB8TextureOES = true;
+    mExtensions.compressedETC1RGB8SubTexture = true;
+    mExtensions.lossyETCDecode               = true;
+    mExtensions.geometryShader               = true;
 
-    mExtensions.eglImage                  = true;
-    mExtensions.eglImageExternal          = true;
-    mExtensions.eglImageExternalEssl3     = true;
-    mExtensions.eglStreamConsumerExternal = true;
+    mExtensions.eglImageOES                 = true;
+    mExtensions.eglImageExternalOES         = true;
+    mExtensions.eglImageExternalEssl3OES    = true;
+    mExtensions.eglImageArray               = true;
+    mExtensions.eglStreamConsumerExternalNV = true;
 
     const gl::Version maxClientVersion(3, 1);
     mCaps = GenerateMinimumCaps(maxClientVersion, mExtensions);
@@ -138,11 +142,31 @@ angle::Result ContextNULL::drawArraysInstanced(const gl::Context *context,
     return angle::Result::Continue;
 }
 
+angle::Result ContextNULL::drawArraysInstancedBaseInstance(const gl::Context *context,
+                                                           gl::PrimitiveMode mode,
+                                                           GLint first,
+                                                           GLsizei count,
+                                                           GLsizei instanceCount,
+                                                           GLuint baseInstance)
+{
+    return angle::Result::Continue;
+}
+
 angle::Result ContextNULL::drawElements(const gl::Context *context,
                                         gl::PrimitiveMode mode,
                                         GLsizei count,
                                         gl::DrawElementsType type,
                                         const void *indices)
+{
+    return angle::Result::Continue;
+}
+
+angle::Result ContextNULL::drawElementsBaseVertex(const gl::Context *context,
+                                                  gl::PrimitiveMode mode,
+                                                  GLsizei count,
+                                                  gl::DrawElementsType type,
+                                                  const void *indices,
+                                                  GLint baseVertex)
 {
     return angle::Result::Continue;
 }
@@ -157,6 +181,29 @@ angle::Result ContextNULL::drawElementsInstanced(const gl::Context *context,
     return angle::Result::Continue;
 }
 
+angle::Result ContextNULL::drawElementsInstancedBaseVertex(const gl::Context *context,
+                                                           gl::PrimitiveMode mode,
+                                                           GLsizei count,
+                                                           gl::DrawElementsType type,
+                                                           const void *indices,
+                                                           GLsizei instances,
+                                                           GLint baseVertex)
+{
+    return angle::Result::Continue;
+}
+
+angle::Result ContextNULL::drawElementsInstancedBaseVertexBaseInstance(const gl::Context *context,
+                                                                       gl::PrimitiveMode mode,
+                                                                       GLsizei count,
+                                                                       gl::DrawElementsType type,
+                                                                       const void *indices,
+                                                                       GLsizei instances,
+                                                                       GLint baseVertex,
+                                                                       GLuint baseInstance)
+{
+    return angle::Result::Continue;
+}
+
 angle::Result ContextNULL::drawRangeElements(const gl::Context *context,
                                              gl::PrimitiveMode mode,
                                              GLuint start,
@@ -164,6 +211,18 @@ angle::Result ContextNULL::drawRangeElements(const gl::Context *context,
                                              GLsizei count,
                                              gl::DrawElementsType type,
                                              const void *indices)
+{
+    return angle::Result::Continue;
+}
+
+angle::Result ContextNULL::drawRangeElementsBaseVertex(const gl::Context *context,
+                                                       gl::PrimitiveMode mode,
+                                                       GLuint start,
+                                                       GLuint end,
+                                                       GLsizei count,
+                                                       gl::DrawElementsType type,
+                                                       const void *indices,
+                                                       GLint baseVertex)
 {
     return angle::Result::Continue;
 }
@@ -183,71 +242,74 @@ angle::Result ContextNULL::drawElementsIndirect(const gl::Context *context,
     return angle::Result::Continue;
 }
 
-void ContextNULL::stencilFillPath(const gl::Path *path, GLenum fillMode, GLuint mask) {}
-
-void ContextNULL::stencilStrokePath(const gl::Path *path, GLint reference, GLuint mask) {}
-
-void ContextNULL::coverFillPath(const gl::Path *path, GLenum coverMode) {}
-
-void ContextNULL::coverStrokePath(const gl::Path *path, GLenum coverMode) {}
-
-void ContextNULL::stencilThenCoverFillPath(const gl::Path *path,
-                                           GLenum fillMode,
-                                           GLuint mask,
-                                           GLenum coverMode)
-{}
-
-void ContextNULL::stencilThenCoverStrokePath(const gl::Path *path,
-                                             GLint reference,
-                                             GLuint mask,
-                                             GLenum coverMode)
-{}
-
-void ContextNULL::coverFillPathInstanced(const std::vector<gl::Path *> &paths,
-                                         GLenum coverMode,
-                                         GLenum transformType,
-                                         const GLfloat *transformValues)
-{}
-
-void ContextNULL::coverStrokePathInstanced(const std::vector<gl::Path *> &paths,
-                                           GLenum coverMode,
-                                           GLenum transformType,
-                                           const GLfloat *transformValues)
-{}
-
-void ContextNULL::stencilFillPathInstanced(const std::vector<gl::Path *> &paths,
-                                           GLenum fillMode,
-                                           GLuint mask,
-                                           GLenum transformType,
-                                           const GLfloat *transformValues)
-{}
-
-void ContextNULL::stencilStrokePathInstanced(const std::vector<gl::Path *> &paths,
-                                             GLint reference,
-                                             GLuint mask,
-                                             GLenum transformType,
-                                             const GLfloat *transformValues)
-{}
-
-void ContextNULL::stencilThenCoverFillPathInstanced(const std::vector<gl::Path *> &paths,
-                                                    GLenum coverMode,
-                                                    GLenum fillMode,
-                                                    GLuint mask,
-                                                    GLenum transformType,
-                                                    const GLfloat *transformValues)
-{}
-
-void ContextNULL::stencilThenCoverStrokePathInstanced(const std::vector<gl::Path *> &paths,
-                                                      GLenum coverMode,
-                                                      GLint reference,
-                                                      GLuint mask,
-                                                      GLenum transformType,
-                                                      const GLfloat *transformValues)
-{}
-
-GLenum ContextNULL::getResetStatus()
+angle::Result ContextNULL::multiDrawArrays(const gl::Context *context,
+                                           gl::PrimitiveMode mode,
+                                           const GLint *firsts,
+                                           const GLsizei *counts,
+                                           GLsizei drawcount)
 {
-    return GL_NO_ERROR;
+    return angle::Result::Continue;
+}
+
+angle::Result ContextNULL::multiDrawArraysInstanced(const gl::Context *context,
+                                                    gl::PrimitiveMode mode,
+                                                    const GLint *firsts,
+                                                    const GLsizei *counts,
+                                                    const GLsizei *instanceCounts,
+                                                    GLsizei drawcount)
+{
+    return angle::Result::Continue;
+}
+
+angle::Result ContextNULL::multiDrawElements(const gl::Context *context,
+                                             gl::PrimitiveMode mode,
+                                             const GLsizei *counts,
+                                             gl::DrawElementsType type,
+                                             const GLvoid *const *indices,
+                                             GLsizei drawcount)
+{
+    return angle::Result::Continue;
+}
+
+angle::Result ContextNULL::multiDrawElementsInstanced(const gl::Context *context,
+                                                      gl::PrimitiveMode mode,
+                                                      const GLsizei *counts,
+                                                      gl::DrawElementsType type,
+                                                      const GLvoid *const *indices,
+                                                      const GLsizei *instanceCounts,
+                                                      GLsizei drawcount)
+{
+    return angle::Result::Continue;
+}
+
+angle::Result ContextNULL::multiDrawArraysInstancedBaseInstance(const gl::Context *context,
+                                                                gl::PrimitiveMode mode,
+                                                                const GLint *firsts,
+                                                                const GLsizei *counts,
+                                                                const GLsizei *instanceCounts,
+                                                                const GLuint *baseInstances,
+                                                                GLsizei drawcount)
+{
+    return angle::Result::Continue;
+}
+
+angle::Result ContextNULL::multiDrawElementsInstancedBaseVertexBaseInstance(
+    const gl::Context *context,
+    gl::PrimitiveMode mode,
+    const GLsizei *counts,
+    gl::DrawElementsType type,
+    const GLvoid *const *indices,
+    const GLsizei *instanceCounts,
+    const GLint *baseVertices,
+    const GLuint *baseInstances,
+    GLsizei drawcount)
+{
+    return angle::Result::Continue;
+}
+
+gl::GraphicsResetStatus ContextNULL::getResetStatus()
+{
+    return gl::GraphicsResetStatus::NoError;
 }
 
 std::string ContextNULL::getVendorString() const
@@ -260,15 +322,33 @@ std::string ContextNULL::getRendererDescription() const
     return "NULL";
 }
 
-void ContextNULL::insertEventMarker(GLsizei length, const char *marker) {}
+angle::Result ContextNULL::insertEventMarker(GLsizei length, const char *marker)
+{
+    return angle::Result::Continue;
+}
 
-void ContextNULL::pushGroupMarker(GLsizei length, const char *marker) {}
+angle::Result ContextNULL::pushGroupMarker(GLsizei length, const char *marker)
+{
+    return angle::Result::Continue;
+}
 
-void ContextNULL::popGroupMarker() {}
+angle::Result ContextNULL::popGroupMarker()
+{
+    return angle::Result::Continue;
+}
 
-void ContextNULL::pushDebugGroup(GLenum source, GLuint id, const std::string &message) {}
+angle::Result ContextNULL::pushDebugGroup(const gl::Context *context,
+                                          GLenum source,
+                                          GLuint id,
+                                          const std::string &message)
+{
+    return angle::Result::Continue;
+}
 
-void ContextNULL::popDebugGroup() {}
+angle::Result ContextNULL::popDebugGroup(const gl::Context *context)
+{
+    return angle::Result::Continue;
+}
 
 angle::Result ContextNULL::syncState(const gl::Context *context,
                                      const gl::State::DirtyBits &dirtyBits,
@@ -382,14 +462,21 @@ ProgramPipelineImpl *ContextNULL::createProgramPipeline(const gl::ProgramPipelin
     return new ProgramPipelineNULL(state);
 }
 
-std::vector<PathImpl *> ContextNULL::createPaths(GLsizei range)
+MemoryObjectImpl *ContextNULL::createMemoryObject()
 {
-    std::vector<PathImpl *> result(range);
-    for (GLsizei idx = 0; idx < range; idx++)
-    {
-        result[idx] = new PathNULL();
-    }
-    return result;
+    UNREACHABLE();
+    return nullptr;
+}
+
+SemaphoreImpl *ContextNULL::createSemaphore()
+{
+    UNREACHABLE();
+    return nullptr;
+}
+
+OverlayImpl *ContextNULL::createOverlay(const gl::OverlayState &state)
+{
+    return new OverlayImpl(state);
 }
 
 angle::Result ContextNULL::dispatchCompute(const gl::Context *context,

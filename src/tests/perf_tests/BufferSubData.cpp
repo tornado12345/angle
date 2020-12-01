@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2014 The ANGLE Project Authors. All rights reserved.
+// Copyright 2014 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -27,13 +27,13 @@ struct BufferSubDataParams final : public RenderTestParams
         minorVersion      = 0;
         windowWidth       = 512;
         windowHeight      = 512;
-        updateSize        = 3000;
-        bufferSize        = 40000000;
+        updateSize        = 32000;
+        bufferSize        = 40000;
         iterationsPerStep = kIterationsPerStep;
         updateRate        = 1;
     }
 
-    std::string suffix() const override;
+    std::string story() const override;
 
     GLboolean vertexNormalized;
     GLenum vertexType;
@@ -47,7 +47,7 @@ struct BufferSubDataParams final : public RenderTestParams
 
 std::ostream &operator<<(std::ostream &os, const BufferSubDataParams &params)
 {
-    os << params.suffix().substr(1);
+    os << params.backendAndStory().substr(1);
     return os;
 }
 
@@ -203,11 +203,11 @@ GLsizeiptr GetVertexData(GLenum type,
     return triDataSize;
 }
 
-std::string BufferSubDataParams::suffix() const
+std::string BufferSubDataParams::story() const
 {
     std::stringstream strstr;
 
-    strstr << RenderTestParams::suffix();
+    strstr << RenderTestParams::story();
 
     if (vertexNormalized)
     {
@@ -350,20 +350,10 @@ BufferSubDataParams BufferUpdateD3D11Params()
     return params;
 }
 
-BufferSubDataParams BufferUpdateD3D9Params()
-{
-    BufferSubDataParams params;
-    params.eglParameters        = egl_platform::D3D9();
-    params.vertexType           = GL_FLOAT;
-    params.vertexComponentCount = 4;
-    params.vertexNormalized     = GL_FALSE;
-    return params;
-}
-
 BufferSubDataParams BufferUpdateOpenGLOrGLESParams()
 {
     BufferSubDataParams params;
-    params.eglParameters        = egl_platform::OPENGL_OR_GLES(false);
+    params.eglParameters        = egl_platform::OPENGL_OR_GLES();
     params.vertexType           = GL_FLOAT;
     params.vertexComponentCount = 4;
     params.vertexNormalized     = GL_FALSE;
@@ -387,7 +377,6 @@ TEST_P(BufferSubDataBenchmark, Run)
 
 ANGLE_INSTANTIATE_TEST(BufferSubDataBenchmark,
                        BufferUpdateD3D11Params(),
-                       BufferUpdateD3D9Params(),
                        BufferUpdateOpenGLOrGLESParams(),
                        BufferUpdateVulkanParams());
 

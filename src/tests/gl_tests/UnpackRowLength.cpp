@@ -27,10 +27,8 @@ class UnpackRowLengthTest : public ANGLETest
         mProgram = 0;
     }
 
-    void SetUp() override
+    void testSetUp() override
     {
-        ANGLETest::SetUp();
-
         constexpr char kFS[] = R"(uniform sampler2D tex;
 void main()
 {
@@ -44,18 +42,13 @@ void main()
         }
     }
 
-    void TearDown() override
-    {
-        glDeleteProgram(mProgram);
-
-        ANGLETest::TearDown();
-    }
+    void testTearDown() override { glDeleteProgram(mProgram); }
 
     void testRowLength(int texSize, int rowLength)
     {
         glPixelStorei(GL_UNPACK_ROW_LENGTH, rowLength);
 
-        if ((getClientMajorVersion() == 3) || extensionEnabled("GL_EXT_unpack_subimage"))
+        if ((getClientMajorVersion() == 3) || IsGLExtensionEnabled("GL_EXT_unpack_subimage"))
         {
             // Only texSize * texSize region is filled as WHITE, other parts are BLACK.
             // If the UNPACK_ROW_LENGTH is implemented correctly, all texels inside this texture are
@@ -106,14 +99,6 @@ TEST_P(UnpackRowLengthTest, RowLength1024)
 
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
-ANGLE_INSTANTIATE_TEST(UnpackRowLengthTest,
-                       ES3_D3D11(),
-                       ES2_D3D11(),
-                       ES2_D3D9(),
-                       ES2_OPENGL(),
-                       ES3_OPENGL(),
-                       ES2_OPENGLES(),
-                       ES3_OPENGLES(),
-                       ES2_VULKAN());
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(UnpackRowLengthTest);
 
 }  // namespace

@@ -20,6 +20,11 @@ namespace egl
 class Display;
 }  // namespace egl
 
+namespace gl
+{
+class Context;
+}  // namespace gl
+
 namespace rx
 {
 class EGLSyncImpl : angle::NonCopyable
@@ -30,13 +35,20 @@ class EGLSyncImpl : angle::NonCopyable
 
     virtual void onDestroy(const egl::Display *display) {}
 
-    virtual egl::Error initialize(const egl::Display *display, EGLenum type)     = 0;
+    virtual egl::Error initialize(const egl::Display *display,
+                                  const gl::Context *context,
+                                  EGLenum type)      = 0;
     virtual egl::Error clientWait(const egl::Display *display,
+                                  const gl::Context *context,
                                   EGLint flags,
                                   EGLTime timeout,
-                                  EGLint *outResult)                             = 0;
-    virtual egl::Error serverWait(const egl::Display *display, EGLint flags)     = 0;
+                                  EGLint *outResult) = 0;
+    virtual egl::Error serverWait(const egl::Display *display,
+                                  const gl::Context *context,
+                                  EGLint flags)      = 0;
+    virtual egl::Error signal(const egl::Display *display, const gl::Context *context, EGLint mode);
     virtual egl::Error getStatus(const egl::Display *display, EGLint *outStatus) = 0;
+    virtual egl::Error dupNativeFenceFD(const egl::Display *display, EGLint *fdOut) const;
 };
 }  // namespace rx
 

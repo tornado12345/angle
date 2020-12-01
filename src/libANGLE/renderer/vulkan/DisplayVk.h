@@ -12,11 +12,38 @@
 
 #include "common/MemoryBuffer.h"
 #include "libANGLE/renderer/DisplayImpl.h"
+#include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 #include "libANGLE/renderer/vulkan/vk_utils.h"
 
 namespace rx
 {
 class RendererVk;
+
+using ShareContextSet = std::set<ContextVk *>;
+
+class ShareGroupVk : public ShareGroupImpl
+{
+  public:
+    ShareGroupVk() {}
+    void onDestroy(const egl::Display *display) override;
+
+    // PipelineLayoutCache and DescriptorSetLayoutCache can be shared between multiple threads
+    // accessing them via shared contexts. The ShareGroup locks around gl entrypoints ensuring
+    // synchronous update to the caches.
+    PipelineLayoutCache &getPipelineLayoutCache() { return mPipelineLayoutCache; }
+    DescriptorSetLayoutCache &getDescriptorSetLayoutCache() { return mDescriptorSetLayoutCache; }
+    ShareContextSet *getShareContextSet() { return &mShareContextSet; }
+
+  private:
+    // ANGLE uses a PipelineLayout cache to store compatible pipeline layouts.
+    PipelineLayoutCache mPipelineLayoutCache;
+
+    // DescriptorSetLayouts are also managed in a cache.
+    DescriptorSetLayoutCache mDescriptorSetLayoutCache;
+
+    // The list of contexts within the share group
+    ShareContextSet mShareContextSet;
+};
 
 class DisplayVk : public DisplayImpl, public vk::Context
 {
@@ -27,7 +54,8 @@ class DisplayVk : public DisplayImpl, public vk::Context
     egl::Error initialize(egl::Display *display) override;
     void terminate() override;
 
-    egl::Error makeCurrent(egl::Surface *drawSurface,
+    egl::Error makeCurrent(egl::Display *display,
+                           egl::Surface *drawSurface,
                            egl::Surface *readSurface,
                            gl::Context *context) override;
 
@@ -35,8 +63,6 @@ class DisplayVk : public DisplayImpl, public vk::Context
     egl::Error restoreLostDevice(const egl::Display *display) override;
 
     std::string getVendorString() const override;
-
-    DeviceImpl *createDevice() override;
 
     egl::Error waitClient(const gl::Context *context) override;
     egl::Error waitNative(const gl::Context *context, EGLint engine) override;
@@ -71,14 +97,16 @@ class DisplayVk : public DisplayImpl, public vk::Context
     EGLSyncImpl *createSync(const egl::AttributeMap &attribs) override;
 
     gl::Version getMaxSupportedESVersion() const override;
+    gl::Version getMaxConformantESVersion() const override;
 
     virtual const char *getWSIExtension() const = 0;
     virtual const char *getWSILayer() const;
 
     // Determine if a config with given formats and sample counts is supported.  This callback may
-    // modify the config to add or remove platform specific attributes such as nativeVisualID before
-    // returning a bool to indicate if the config should be supported.
-    virtual bool checkConfigSupport(egl::Config *config) = 0;
+    // modify the config to add or remove platform specific attributes such as nativeVisualID.  If
+    // the config is not supported by the window system, it removes the EGL_WINDOW_BIT from
+    // surfaceType, which would still allow the config to be used for pbuffers.
+    virtual void checkConfigSupport(egl::Config *config) = 0;
 
     ANGLE_NO_DISCARD bool getScratchBuffer(size_t requestedSizeBytes,
                                            angle::MemoryBuffer **scratchBufferOut) const;
@@ -92,17 +120,23 @@ class DisplayVk : public DisplayImpl, public vk::Context
     // TODO(jmadill): Remove this once refactor is done. http://anglebug.com/3041
     egl::Error getEGLError(EGLint errorCode);
 
+    void populateFeatureList(angle::FeatureList *features) override;
+
+    ShareGroupImpl *createShareGroup() override;
+
+  protected:
+    void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
+
   private:
     virtual SurfaceImpl *createWindowSurfaceVk(const egl::SurfaceState &state,
-                                               EGLNativeWindowType window,
-                                               EGLint width,
-                                               EGLint height) = 0;
-    void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
+                                               EGLNativeWindowType window) = 0;
     void generateCaps(egl::Caps *outCaps) const override;
+
+    virtual angle::Result waitNativeImpl();
 
     mutable angle::ScratchBuffer mScratchBuffer;
 
-    std::string mStoredErrorString;
+    vk::Error mSavedError;
 };
 
 }  // namespace rx

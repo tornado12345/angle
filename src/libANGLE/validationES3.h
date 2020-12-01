@@ -14,7 +14,28 @@
 
 namespace gl
 {
-// Nothing here yet.
+bool ValidateES3TexImageParametersBase(const Context *context,
+                                       TextureTarget target,
+                                       GLint level,
+                                       GLenum internalformat,
+                                       bool isCompressed,
+                                       bool isSubImage,
+                                       GLint xoffset,
+                                       GLint yoffset,
+                                       GLint zoffset,
+                                       GLsizei width,
+                                       GLsizei height,
+                                       GLsizei depth,
+                                       GLint border,
+                                       GLenum format,
+                                       GLenum type,
+                                       GLsizei imageSize,
+                                       const void *pixels);
+
+bool ValidateProgramParameteriBase(const Context *context,
+                                   ShaderProgramID program,
+                                   GLenum pname,
+                                   GLint value);
 }  // namespace gl
 
 #endif  // LIBANGLE_VALIDATION_ES3_H_

@@ -122,6 +122,8 @@ TEST_P(ProgramInterfaceTestES31, GetResourceName)
 // Tests glGetProgramResourceLocation.
 TEST_P(ProgramInterfaceTestES31, GetResourceLocation)
 {
+    // http://anglebug.com/4092
+    ANGLE_SKIP_TEST_IF(isSwiftshader());
     constexpr char kVS[] =
         "#version 310 es\n"
         "precision highp float;\n"
@@ -181,6 +183,8 @@ TEST_P(ProgramInterfaceTestES31, GetResourceLocation)
 // Tests glGetProgramResource.
 TEST_P(ProgramInterfaceTestES31, GetResource)
 {
+    // http://anglebug.com/4092
+    ANGLE_SKIP_TEST_IF(isSwiftshader());
     constexpr char kVS[] =
         "#version 310 es\n"
         "precision highp float;\n"
@@ -343,9 +347,11 @@ TEST_P(ProgramInterfaceTestES31, GetProgramInterface)
 // Tests the resource property query for uniform can be done correctly.
 TEST_P(ProgramInterfaceTestES31, GetUniformProperties)
 {
-    // TODO(jiajia.qin@intel.com): Don't skip this test once atomic counter is supported on d3d
-    // backend. http://anglebug.com/1729
-    ANGLE_SKIP_TEST_IF(IsD3D11());
+    // Check atomic support.
+    GLint numSupported;
+    glGetIntegerv(GL_MAX_VERTEX_ATOMIC_COUNTERS, &numSupported);
+    EXPECT_GL_NO_ERROR();
+    ANGLE_SKIP_TEST_IF(numSupported < 1);
 
     constexpr char kVS[] =
         "#version 310 es\n"
@@ -536,9 +542,13 @@ TEST_P(ProgramInterfaceTestES31, GetUniformBlockProperties)
 // Tests atomic counter buffer qeury works correctly.
 TEST_P(ProgramInterfaceTestES31, QueryAtomicCounteBuffer)
 {
-    // TODO(jiajia.qin@intel.com): Don't skip this test once atomic counter is supported on d3d
-    // backend. http://anglebug.com/1729
-    ANGLE_SKIP_TEST_IF(IsD3D11());
+    // Check atomic support.
+    GLint numSupportedInVertex;
+    GLint numSupportedInFragment;
+    glGetIntegerv(GL_MAX_VERTEX_ATOMIC_COUNTERS, &numSupportedInVertex);
+    glGetIntegerv(GL_MAX_FRAGMENT_ATOMIC_COUNTERS, &numSupportedInFragment);
+    EXPECT_GL_NO_ERROR();
+    ANGLE_SKIP_TEST_IF(numSupportedInVertex < 1 || numSupportedInFragment < 1);
 
     constexpr char kVS[] =
         "#version 310 es\n"
@@ -594,6 +604,12 @@ TEST_P(ProgramInterfaceTestES31, GetBufferVariableProperties)
     // TODO(jiajia.qin@intel.com): Don't skip this test once non-simple SSBO sentences are supported
     // on d3d backend. http://anglebug.com/1951
     ANGLE_SKIP_TEST_IF(IsD3D11());
+
+    // Check SSBO support
+    GLint numSupported;
+    glGetIntegerv(GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS, &numSupported);
+    EXPECT_GL_NO_ERROR();
+    ANGLE_SKIP_TEST_IF(numSupported < 2);
 
     constexpr char kVS[] =
         "#version 310 es\n"
@@ -944,6 +960,12 @@ TEST_P(ProgramInterfaceTestES31, GetShaderStorageBlockProperties)
     // on d3d backend. http://anglebug.com/1951
     ANGLE_SKIP_TEST_IF(IsD3D11());
 
+    // Check SSBO support
+    GLint numSupported;
+    glGetIntegerv(GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS, &numSupported);
+    EXPECT_GL_NO_ERROR();
+    ANGLE_SKIP_TEST_IF(numSupported < 3);
+
     constexpr char kVS[] =
         "#version 310 es\n"
         "precision highp float;\n"
@@ -1195,6 +1217,6 @@ void main() {
     glDeleteProgram(program);
 }
 
-ANGLE_INSTANTIATE_TEST(ProgramInterfaceTestES31, ES31_OPENGL(), ES31_OPENGLES(), ES31_D3D11());
+ANGLE_INSTANTIATE_TEST_ES31(ProgramInterfaceTestES31);
 
 }  // anonymous namespace

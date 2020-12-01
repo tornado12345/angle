@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -8,6 +8,9 @@
 
 #ifndef LIBANGLE_RENDERER_GL_CGL_DISPLAYCGL_H_
 #define LIBANGLE_RENDERER_GL_CGL_DISPLAYCGL_H_
+
+#include <thread>
+#include <unordered_set>
 
 #include "libANGLE/renderer/gl/DisplayGL.h"
 
@@ -22,6 +25,17 @@ namespace rx
 
 class WorkerContext;
 
+struct EnsureCGLContextIsCurrent : angle::NonCopyable
+{
+  public:
+    EnsureCGLContextIsCurrent(CGLContextObj context);
+    ~EnsureCGLContextIsCurrent();
+
+  private:
+    CGLContextObj mOldContext;
+    bool mResetContext;
+};
+
 class DisplayCGL : public DisplayGL
 {
   public:
@@ -30,6 +44,13 @@ class DisplayCGL : public DisplayGL
 
     egl::Error initialize(egl::Display *display) override;
     void terminate() override;
+    egl::Error prepareForCall() override;
+    egl::Error releaseThread() override;
+
+    egl::Error makeCurrent(egl::Display *display,
+                           egl::Surface *drawSurface,
+                           egl::Surface *readSurface,
+                           gl::Context *context) override;
 
     SurfaceImpl *createWindowSurface(const egl::SurfaceState &state,
                                      EGLNativeWindowType window,
@@ -71,8 +92,19 @@ class DisplayCGL : public DisplayGL
     gl::Version getMaxSupportedESVersion() const override;
 
     CGLContextObj getCGLContext() const;
+    CGLPixelFormatObj getCGLPixelFormat() const;
 
     WorkerContext *createWorkerContext(std::string *infoLog);
+
+    void initializeFrontendFeatures(angle::FrontendFeatures *features) const override;
+
+    void populateFeatureList(angle::FeatureList *features) override;
+
+    // Support for dual-GPU MacBook Pros. Used only by ContextCGL. The use of
+    // these entry points is gated by the presence of dual GPUs.
+    egl::Error referenceDiscreteGPU();
+    egl::Error unreferenceDiscreteGPU();
+    egl::Error handleGPUSwitch() override;
 
   private:
     egl::Error makeCurrentSurfaceless(gl::Context *context) override;
@@ -80,11 +112,23 @@ class DisplayCGL : public DisplayGL
     void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
     void generateCaps(egl::Caps *outCaps) const override;
 
+    void checkDiscreteGPUStatus();
+
     std::shared_ptr<RendererGL> mRenderer;
 
     egl::Display *mEGLDisplay;
     CGLContextObj mContext;
+    std::unordered_set<std::thread::id> mThreadsWithCurrentContext;
     CGLPixelFormatObj mPixelFormat;
+    bool mSupportsGPUSwitching;
+    uint64_t mCurrentGPUID;
+    CGLPixelFormatObj mDiscreteGPUPixelFormat;
+    int mDiscreteGPURefs;
+    // This comes from the ANGLE platform's DefaultMonotonicallyIncreasingTime. If the discrete GPU
+    // is unref'd for the last time, this is set to the time of that last unref. If it isn't
+    // activated again in 10 seconds, the discrete GPU pixel format is deleted.
+    double mLastDiscreteGPUUnrefTime;
+    bool mDeviceContextIsVolatile = false;
 };
 
 }  // namespace rx

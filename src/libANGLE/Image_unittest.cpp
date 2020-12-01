@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -37,7 +37,7 @@ TEST(ImageTest, RefCounting)
     // Create a texture and an EGL image that uses the texture as its source
     rx::MockTextureImpl *textureImpl = new rx::MockTextureImpl();
     EXPECT_CALL(mockGLFactory, createTexture(_)).WillOnce(Return(textureImpl));
-    gl::Texture *texture = new gl::Texture(&mockGLFactory, 1, gl::TextureType::_2D);
+    gl::Texture *texture = new gl::Texture(&mockGLFactory, {1}, gl::TextureType::_2D);
     texture->addRef();
 
     EXPECT_CALL(mockEGLFactory, createImage(_, _, _, _))
@@ -57,7 +57,7 @@ TEST(ImageTest, RefCounting)
     // Create a renderbuffer and set it as a target of the EGL image
     rx::MockRenderbufferImpl *renderbufferImpl = new rx::MockRenderbufferImpl();
     EXPECT_CALL(mockGLFactory, createRenderbuffer(_)).WillOnce(Return(renderbufferImpl));
-    gl::Renderbuffer *renderbuffer = new gl::Renderbuffer(&mockGLFactory, 1);
+    gl::Renderbuffer *renderbuffer = new gl::Renderbuffer(&mockGLFactory, {1});
     renderbuffer->addRef();
 
     EXPECT_CALL(*renderbufferImpl, setStorageEGLImageTarget(_, _))
@@ -106,17 +106,18 @@ TEST(ImageTest, RespecificationReleasesReferences)
     // Create a texture and an EGL image that uses the texture as its source
     rx::MockTextureImpl *textureImpl = new rx::MockTextureImpl();
     EXPECT_CALL(mockGLFactory, createTexture(_)).WillOnce(Return(textureImpl));
-    gl::Texture *texture = new gl::Texture(&mockGLFactory, 1, gl::TextureType::_2D);
+    gl::Texture *texture = new gl::Texture(&mockGLFactory, {1}, gl::TextureType::_2D);
     texture->addRef();
 
     gl::PixelUnpackState defaultUnpackState;
 
-    EXPECT_CALL(*textureImpl, setImage(_, _, _, _, _, _, _, _))
+    EXPECT_CALL(*textureImpl, setImage(_, _, _, _, _, _, _, _, _))
         .WillOnce(Return(angle::Result::Continue))
         .RetiresOnSaturation();
-    EXPECT_EQ(angle::Result::Continue,
-              texture->setImage(nullptr, defaultUnpackState, gl::TextureTarget::_2D, 0, GL_RGBA8,
-                                gl::Extents(1, 1, 1), GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
+    EXPECT_EQ(
+        angle::Result::Continue,
+        texture->setImage(nullptr, defaultUnpackState, nullptr, gl::TextureTarget::_2D, 0, GL_RGBA8,
+                          gl::Extents(1, 1, 1), GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
 
     EXPECT_CALL(mockEGLFactory, createImage(_, _, _, _))
         .WillOnce(CreateMockImageImpl())
@@ -135,13 +136,14 @@ TEST(ImageTest, RespecificationReleasesReferences)
     EXPECT_CALL(*imageImpl, orphan(_, _))
         .WillOnce(Return(angle::Result::Continue))
         .RetiresOnSaturation();
-    EXPECT_CALL(*textureImpl, setImage(_, _, _, _, _, _, _, _))
+    EXPECT_CALL(*textureImpl, setImage(_, _, _, _, _, _, _, _, _))
         .WillOnce(Return(angle::Result::Continue))
         .RetiresOnSaturation();
 
-    EXPECT_EQ(angle::Result::Continue,
-              texture->setImage(nullptr, defaultUnpackState, gl::TextureTarget::_2D, 0, GL_RGBA8,
-                                gl::Extents(1, 1, 1), GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
+    EXPECT_EQ(
+        angle::Result::Continue,
+        texture->setImage(nullptr, defaultUnpackState, nullptr, gl::TextureTarget::_2D, 0, GL_RGBA8,
+                          gl::Extents(1, 1, 1), GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
 
     EXPECT_EQ(1u, texture->getRefCount());
     EXPECT_EQ(1u, image->getRefCount());

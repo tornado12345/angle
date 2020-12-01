@@ -23,6 +23,8 @@ class ExternalImageSiblingVk : public ExternalImageSiblingImpl
     ~ExternalImageSiblingVk() override {}
 
     virtual vk::ImageHelper *getImage() const = 0;
+
+    virtual void release(RendererVk *renderer) = 0;
 };
 
 class ImageVk : public ImageImpl
@@ -38,16 +40,18 @@ class ImageVk : public ImageImpl
 
     vk::ImageHelper *getImage() const { return mImage; }
     gl::TextureType getImageTextureType() const { return mImageTextureType; }
-    uint32_t getImageLevel() const { return mImageLevel; }
+    gl::LevelIndex getImageLevel() const { return mImageLevel; }
     uint32_t getImageLayer() const { return mImageLayer; }
 
   private:
     gl::TextureType mImageTextureType;
-    uint32_t mImageLevel;
+    gl::LevelIndex mImageLevel;
     uint32_t mImageLayer;
 
     bool mOwnsImage;
     vk::ImageHelper *mImage;
+
+    std::vector<vk::Shared<vk::Fence>> mImageLastUseFences;
 
     const gl::Context *mContext;
 };

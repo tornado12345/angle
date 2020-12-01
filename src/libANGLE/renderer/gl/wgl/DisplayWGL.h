@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -63,14 +63,13 @@ class DisplayWGL : public DisplayGL
                                     EGLClientBuffer clientBuffer,
                                     const egl::AttributeMap &attribs) const override;
 
-    DeviceImpl *createDevice() override;
-
     std::string getVendorString() const override;
 
     egl::Error waitClient(const gl::Context *context) override;
     egl::Error waitNative(const gl::Context *context, EGLint engine) override;
 
-    egl::Error makeCurrent(egl::Surface *drawSurface,
+    egl::Error makeCurrent(egl::Display *display,
+                           egl::Surface *drawSurface,
                            egl::Surface *readSurface,
                            gl::Context *context) override;
 
@@ -84,6 +83,10 @@ class DisplayWGL : public DisplayGL
     WorkerContext *createWorkerContext(std::string *infoLog,
                                        HGLRC sharedContext,
                                        const std::vector<int> &workerContextAttribs);
+
+    void initializeFrontendFeatures(angle::FrontendFeatures *features) const override;
+
+    void populateFeatureList(angle::FeatureList *features) override;
 
   private:
     egl::Error initializeImpl(egl::Display *display);
@@ -145,7 +148,6 @@ class DisplayWGL : public DisplayGL
     };
     std::map<IUnknown *, D3DObjectHandle> mRegisteredD3DDevices;
 
-    bool mHasWorkerContexts;
     bool mUseARBShare;
 };
 

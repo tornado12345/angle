@@ -12,7 +12,7 @@
 #define COMMON_POOLALLOC_H_
 
 #if !defined(NDEBUG)
-#    define ANGLE_POOL_ALLOC_GUARD_BLOCKS  // define to enable guard block sanity checking
+#    define ANGLE_POOL_ALLOC_GUARD_BLOCKS  // define to enable guard block checking
 #endif
 
 //
@@ -38,6 +38,7 @@
 #include <vector>
 
 #include "angleutils.h"
+#include "common/debug.h"
 
 namespace angle
 {
@@ -123,12 +124,21 @@ class PoolAllocator : angle::NonCopyable
 {
   public:
     static const int kDefaultAlignment = 16;
+    //
+    // Create PoolAllocator. If alignment is set to 1 byte then fastAllocate()
+    //  function can be used to make allocations with less overhead.
+    //
     PoolAllocator(int growthIncrement = 8 * 1024, int allocationAlignment = kDefaultAlignment);
 
     //
     // Don't call the destructor just to free up the memory, call pop()
     //
     ~PoolAllocator();
+
+    //
+    // Initialize page size and alignment after construction
+    //
+    void initialize(int pageSize, int alignment);
 
     //
     // Call push() to establish a new place to pop memory to.  Does not
@@ -152,6 +162,33 @@ class PoolAllocator : angle::NonCopyable
     // available, otherwise a properly aligned pointer to 'numBytes' of memory.
     //
     void *allocate(size_t numBytes);
+
+    //
+    // Call fastAllocate() for a faster allocate function that does minimal bookkeeping
+    // preCondition: Allocator must have been created w/ alignment of 1
+    ANGLE_INLINE uint8_t *fastAllocate(size_t numBytes)
+    {
+#if defined(ANGLE_DISABLE_POOL_ALLOC)
+        return reinterpret_cast<uint8_t *>(allocate(numBytes));
+#else
+        ASSERT(mAlignment == 1);
+        // No multi-page allocations
+        ASSERT(numBytes <= (mPageSize - mHeaderSkip));
+        //
+        // Do the allocation, most likely case inline first, for efficiency.
+        //
+        if (numBytes <= mPageSize - mCurrentPageOffset)
+        {
+            //
+            // Safe to allocate from mCurrentPageOffset.
+            //
+            uint8_t *memory = reinterpret_cast<uint8_t *>(mInUseList) + mCurrentPageOffset;
+            mCurrentPageOffset += numBytes;
+            return memory;
+        }
+        return reinterpret_cast<uint8_t *>(allocateNewPage(numBytes, numBytes));
+#endif
+    }
 
     //
     // There is no deallocate.  The point of this class is that
@@ -205,6 +242,8 @@ class PoolAllocator : angle::NonCopyable
     };
     using AllocStack = std::vector<AllocState>;
 
+    // Slow path of allocation when we have to get a new page.
+    void *allocateNewPage(size_t numBytes, size_t allocationSize);
     // Track allocations if and only if we're using guard blocks
     void *initializeAllocation(Header *block, unsigned char *memory, size_t numBytes)
     {

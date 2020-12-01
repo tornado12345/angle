@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -17,7 +17,11 @@
 #include "angle_gl.h"
 #include "libANGLE/Version.h"
 #include "libANGLE/renderer/gl/FunctionsGL.h"
-#include "libANGLE/renderer/gl/WorkaroundsGL.h"
+
+namespace angle
+{
+struct FeaturesGL;
+}  // namespace angle
 
 namespace rx
 {
@@ -59,74 +63,75 @@ const InternalFormat &GetInternalFormatInfo(GLenum internalFormat, StandardGL st
 
 struct TexImageFormat
 {
-    GLenum internalFormat;
-    GLenum format;
-    GLenum type;
+    GLenum internalFormat = GL_NONE;
+    GLenum format         = GL_NONE;
+    GLenum type           = GL_NONE;
 };
 TexImageFormat GetTexImageFormat(const FunctionsGL *functions,
-                                 const WorkaroundsGL &workarounds,
+                                 const angle::FeaturesGL &features,
                                  GLenum internalFormat,
                                  GLenum format,
                                  GLenum type);
 
 struct TexSubImageFormat
 {
-    GLenum format;
-    GLenum type;
+    GLenum format = GL_NONE;
+    GLenum type   = GL_NONE;
 };
 TexSubImageFormat GetTexSubImageFormat(const FunctionsGL *functions,
-                                       const WorkaroundsGL &workarounds,
+                                       const angle::FeaturesGL &features,
                                        GLenum format,
                                        GLenum type);
 
 struct CompressedTexImageFormat
 {
-    GLenum internalFormat;
+    GLenum internalFormat = GL_NONE;
 };
 CompressedTexImageFormat GetCompressedTexImageFormat(const FunctionsGL *functions,
-                                                     const WorkaroundsGL &workarounds,
+                                                     const angle::FeaturesGL &features,
                                                      GLenum internalFormat);
 
 struct CompressedTexSubImageFormat
 {
-    GLenum format;
+    GLenum format = GL_NONE;
 };
 CompressedTexSubImageFormat GetCompressedSubTexImageFormat(const FunctionsGL *functions,
-                                                           const WorkaroundsGL &workarounds,
+                                                           const angle::FeaturesGL &features,
                                                            GLenum format);
 
 struct CopyTexImageImageFormat
 {
-    GLenum internalFormat;
+    GLenum internalFormat = GL_NONE;
 };
 CopyTexImageImageFormat GetCopyTexImageImageFormat(const FunctionsGL *functions,
-                                                   const WorkaroundsGL &workarounds,
+                                                   const angle::FeaturesGL &features,
                                                    GLenum internalFormat,
                                                    GLenum framebufferType);
 
 struct TexStorageFormat
 {
-    GLenum internalFormat;
+    GLenum internalFormat = GL_NONE;
 };
 TexStorageFormat GetTexStorageFormat(const FunctionsGL *functions,
-                                     const WorkaroundsGL &workarounds,
+                                     const angle::FeaturesGL &features,
                                      GLenum internalFormat);
 
 struct RenderbufferFormat
 {
-    GLenum internalFormat;
+    GLenum internalFormat = GL_NONE;
 };
 RenderbufferFormat GetRenderbufferFormat(const FunctionsGL *functions,
-                                         const WorkaroundsGL &workarounds,
+                                         const angle::FeaturesGL &features,
                                          GLenum internalFormat);
 
 struct ReadPixelsFormat
 {
-    GLenum format;
-    GLenum type;
+    GLenum format = GL_NONE;
+    GLenum type   = GL_NONE;
 };
 ReadPixelsFormat GetReadPixelsFormat(const FunctionsGL *functions,
-                                     const WorkaroundsGL &workarounds,
+                                     const angle::FeaturesGL &features,
+                                     GLenum readAttachmentFormat,
                                      GLenum format,
                                      GLenum type);
 }  // namespace nativegl

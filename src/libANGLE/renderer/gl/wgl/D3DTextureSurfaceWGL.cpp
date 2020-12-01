@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,8 +9,8 @@
 #include "libANGLE/renderer/gl/wgl/D3DTextureSurfaceWGL.h"
 
 #include "libANGLE/Surface.h"
-#include "libANGLE/renderer/d3d/d3d11/formatutils11.h"
-#include "libANGLE/renderer/d3d/d3d9/formatutils9.h"
+#include "libANGLE/renderer/d3d_format.h"
+#include "libANGLE/renderer/dxgi_format_map.h"
 #include "libANGLE/renderer/gl/FramebufferGL.h"
 #include "libANGLE/renderer/gl/RendererGL.h"
 #include "libANGLE/renderer/gl/StateManagerGL.h"
@@ -348,7 +348,7 @@ egl::Error D3DTextureSurfaceWGL::initialize(const egl::Display *display)
     return egl::NoError();
 }
 
-egl::Error D3DTextureSurfaceWGL::makeCurrent()
+egl::Error D3DTextureSurfaceWGL::makeCurrent(const gl::Context *context)
 {
     if (!mFunctionsWGL->dxLockObjectsNV(mDeviceHandle, 1, &mBoundObjectRenderbufferHandle))
     {
@@ -359,7 +359,7 @@ egl::Error D3DTextureSurfaceWGL::makeCurrent()
     return egl::NoError();
 }
 
-egl::Error D3DTextureSurfaceWGL::unMakeCurrent()
+egl::Error D3DTextureSurfaceWGL::unMakeCurrent(const gl::Context *context)
 {
     if (!mFunctionsWGL->dxUnlockObjectsNV(mDeviceHandle, 1, &mBoundObjectRenderbufferHandle))
     {
@@ -498,7 +498,7 @@ FramebufferImpl *D3DTextureSurfaceWGL::createDefaultFramebuffer(const gl::Contex
                                            mDepthStencilRenderbufferID);
     }
 
-    return new FramebufferGL(data, framebufferID, true);
+    return new FramebufferGL(data, framebufferID, true, false);
 }
 
 HDC D3DTextureSurfaceWGL::getDC() const

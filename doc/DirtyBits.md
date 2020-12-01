@@ -85,10 +85,14 @@ call to [`gl::Context::onSubjectStateChange`][ContextStateChange] which in turn 
 [`gl::StateCache::updateBasicDrawStatesError`][StateCacheUpdate] to re-validate the draw
 framebuffer's completeness. On subsequent draw calls we skip re-validation at minimal cost.
 
+See the below diagram for the dependency relations between Subjects and Observers.
+
+![State Change Notification Flow](https://raw.githubusercontent.com/google/angle/master/doc/img/StateChangeNotificationFlow.svg?sanitize=true)
+
 ## Back-end specific Optimizations
 
-See the [Vulkan README][VulkanREADME] for additional information for how we implement state change
-optimization on the Vulkan back-end.
+See [Fast OpenGL State Transitions][FastStateTransitions] in [Vulkan documents][VulkanREADME] for
+additional information for how we implement state change optimization on the Vulkan back-end.
 
 [DirtyBitType]: https://chromium.googlesource.com/angle/angle/+/5f662c0042703344eb0eef6d1c123e902e3aefbf/src/libANGLE/State.h#483
 [GLSyncState]: https://chromium.googlesource.com/angle/angle/+/5f662c0042703344eb0eef6d1c123e902e3aefbf/src/libANGLE/renderer/gl/StateManagerGL.cpp#1576
@@ -103,4 +107,5 @@ optimization on the Vulkan back-end.
 [FBOStateChange]: https://chromium.googlesource.com/angle/angle/+/5f662c0042703344eb0eef6d1c123e902e3aefbf/src/libANGLE/Framebuffer.cpp#1811
 [ContextStateChange]: https://chromium.googlesource.com/angle/angle/+/5f662c0042703344eb0eef6d1c123e902e3aefbf/src/libANGLE/Context.cpp#7981
 [StateCacheUpdate]: https://chromium.googlesource.com/angle/angle/+/5f662c0042703344eb0eef6d1c123e902e3aefbf/src/libANGLE/Context.cpp#8190
-[VulkanREADME]: ../src/libANGLE/renderer/vulkan/README.md#fast-opengl-state-transitions
+[FastStateTransitions]: ../src/libANGLE/renderer/vulkan/doc/FastOpenGLStateTransitions.md
+[VulkanREADME]: ../src/libANGLE/renderer/vulkan/README.md

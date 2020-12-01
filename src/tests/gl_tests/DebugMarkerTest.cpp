@@ -31,7 +31,7 @@ class DebugMarkerTest : public ANGLETest
 // The debug markers can be validated by capturing this test under PIX/Graphics Diagnostics.
 TEST_P(DebugMarkerTest, BasicValidation)
 {
-    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_EXT_debug_marker"));
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_debug_marker"));
 
     std::string eventMarkerCaption = "Test event marker caption";
     std::string groupMarkerCaption = "Test group marker caption";
@@ -63,11 +63,6 @@ TEST_P(DebugMarkerTest, BasicValidation)
 
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
-ANGLE_INSTANTIATE_TEST(DebugMarkerTest,
-                       ES2_D3D9(),
-                       ES2_D3D11(),
-                       ES2_OPENGL(),
-                       ES2_OPENGLES(),
-                       ES2_VULKAN());
+ANGLE_INSTANTIATE_TEST_ES2(DebugMarkerTest);
 
 }  // namespace

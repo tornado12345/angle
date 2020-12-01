@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2013 The ANGLE Project Authors. All rights reserved.
+// Copyright 2013 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -39,8 +39,20 @@ class QueryImpl : angle::NonCopyable
 
     gl::QueryType getType() const { return mType; }
 
-  private:
-    gl::QueryType mType;
+    // Convenience functions
+    bool isOcclusionQuery() const { return isAnySamplesQuery() || isAnySamplesConservativeQuery(); }
+    bool isAnySamplesQuery() const { return mType == gl::QueryType::AnySamples; }
+    bool isAnySamplesConservativeQuery() const
+    {
+        return mType == gl::QueryType::AnySamplesConservative;
+    }
+    bool isTransformFeedbackQuery() const
+    {
+        return mType == gl::QueryType::TransformFeedbackPrimitivesWritten;
+    }
+
+  protected:
+    const gl::QueryType mType;
 };
 }  // namespace rx
 

@@ -24,12 +24,10 @@ class DisplayVkAndroid : public DisplayVk
     bool isValidNativeWindow(EGLNativeWindowType window) const override;
 
     SurfaceImpl *createWindowSurfaceVk(const egl::SurfaceState &state,
-                                       EGLNativeWindowType window,
-                                       EGLint width,
-                                       EGLint height) override;
+                                       EGLNativeWindowType window) override;
 
     egl::ConfigSet generateConfigs() override;
-    bool checkConfigSupport(egl::Config *config) override;
+    void checkConfigSupport(egl::Config *config) override;
 
     egl::Error validateImageClientBuffer(const gl::Context *context,
                                          EGLenum target,

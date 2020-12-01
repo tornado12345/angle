@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2016 The ANGLE Project Authors. All rights reserved.
+// Copyright 2016 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -17,9 +17,9 @@ class OzoneWindow : public OSWindow
 {
   public:
     OzoneWindow();
-    ~OzoneWindow();
+    ~OzoneWindow() override;
 
-    bool initialize(const std::string &name, size_t width, size_t height) override;
+    void disableErrorMessageDialog() override;
     void destroy() override;
 
     void resetNativeWindow() override;
@@ -29,6 +29,7 @@ class OzoneWindow : public OSWindow
     void messageLoop() override;
 
     void setMousePosition(int x, int y) override;
+    bool setOrientation(int width, int height) override;
     bool setPosition(int x, int y) override;
     bool resize(int width, int height) override;
     void setVisible(bool isVisible) override;
@@ -36,6 +37,8 @@ class OzoneWindow : public OSWindow
     void signalTestEvent() override;
 
   private:
+    bool initializeImpl(const std::string &name, int width, int height) override;
+
     struct Native
     {
         int32_t x;

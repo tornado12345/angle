@@ -33,10 +33,8 @@ class DepthStencilTest : public ANGLETest
         setConfigStencilBits(8);
     }
 
-    void SetUp() override
+    void testSetUp() override
     {
-        ANGLETest::SetUp();
-
         glBindTexture(GL_TEXTURE_2D, mColorTexture);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, getWindowWidth(), getWindowHeight(), 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, nullptr);
@@ -54,8 +52,8 @@ class DepthStencilTest : public ANGLETest
 
         ASSERT_GL_NO_ERROR();
 
-        // Note: GL_DEPTH_COMPONENT24 is not allowed in GLES2.
-        if (getClientMajorVersion() >= 3)
+        // Note: GL_DEPTH_COMPONENT24 is allowed in GLES2 with GL_OES_depth24 extension.
+        if (getClientMajorVersion() >= 3 || IsGLExtensionEnabled("GL_OES_depth24"))
         {
             // Setup Color/Depth FBO with a depth format that's emulated with packed depth/stencil.
             glBindFramebuffer(GL_FRAMEBUFFER, mColorDepthFBO);
@@ -71,8 +69,6 @@ class DepthStencilTest : public ANGLETest
 
         ASSERT_GL_NO_ERROR();
     }
-
-    void TearDown() override { ANGLETest::TearDown(); }
 
     void bindColorStencilFBO()
     {
@@ -90,7 +86,7 @@ class DepthStencilTest : public ANGLETest
     // depth/stencil format
     void overrideFeaturesVk(FeaturesVk *featuresVk) override
     {
-        featuresVk->forceFallbackFormat = true;
+        featuresVk->overrideFeatures({"force_fallback_format"}, true);
     }
 
     void prepareSingleEmulatedWithPacked();
@@ -108,6 +104,9 @@ class DepthStencilTest : public ANGLETest
     bool mHasDepth   = true;
     bool mHasStencil = true;
 };
+
+class DepthStencilTestES3 : public DepthStencilTest
+{};
 
 void DepthStencilTest::ensureColor(GLColor color)
 {
@@ -238,7 +237,7 @@ void DepthStencilTest::prepareSingleEmulatedWithPacked()
 // Tests that clearing or rendering into a depth-only format doesn't affect stencil.
 TEST_P(DepthStencilTest, DepthOnlyEmulatedWithPacked)
 {
-    ANGLE_SKIP_TEST_IF(getClientMajorVersion() < 3);
+    ANGLE_SKIP_TEST_IF(getClientMajorVersion() < 3 && !IsGLExtensionEnabled("GL_OES_depth24"));
 
     bindColorDepthFBO();
     prepareSingleEmulatedWithPacked();
@@ -248,18 +247,69 @@ TEST_P(DepthStencilTest, DepthOnlyEmulatedWithPacked)
 // Tests that clearing or rendering into a stencil-only format doesn't affect depth.
 TEST_P(DepthStencilTest, StencilOnlyEmulatedWithPacked)
 {
+    // http://anglebug.com/4092
+    ANGLE_SKIP_TEST_IF(IsWindows() && IsD3D9());
     bindColorStencilFBO();
     prepareSingleEmulatedWithPacked();
     ensureDepthUnaffected();
 }
 
-ANGLE_INSTANTIATE_TEST(DepthStencilTest,
-                       ES2_D3D11(),
-                       ES3_D3D11(),
-                       ES2_OPENGL(),
-                       ES3_OPENGL(),
-                       ES2_OPENGLES(),
-                       ES3_OPENGLES(),
-                       ES2_VULKAN());
+// Tests that clearing depth/stencil followed by draw works when the depth/stencil attachment is a
+// texture.
+TEST_P(DepthStencilTestES3, ClearThenDraw)
+{
+    GLFramebuffer FBO;
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+
+    constexpr GLsizei kSize = 6;
+
+    // Create framebuffer to draw into, with both color and depth attachments.
+    GLTexture color;
+    glBindTexture(GL_TEXTURE_2D, color);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kSize, kSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    GLTexture depth;
+    glBindTexture(GL_TEXTURE_2D, depth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, kSize, kSize, 0, GL_DEPTH_STENCIL,
+                 GL_UNSIGNED_INT_24_8_OES, nullptr);
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, depth, 0);
+    ASSERT_GL_NO_ERROR();
+
+    // Set viewport and clear depth/stencil
+    glViewport(0, 0, kSize, kSize);
+    glClearDepthf(1);
+    glClearStencil(0x55);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    // If depth is not cleared to 1, rendering would fail.
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    // If stencil is not clear to 0x55, rendering would fail.
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_EQUAL, 0x55, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glStencilMask(0xFF);
+
+    // Set up program
+    ANGLE_GL_PROGRAM(drawRed, essl1_shaders::vs::Simple(), essl1_shaders::fs::Red());
+
+    // Draw red
+    drawQuad(drawRed, essl1_shaders::PositionAttrib(), 0.0f);
+    ASSERT_GL_NO_ERROR();
+
+    // Verify.
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, 0, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(0, kSize - 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, kSize - 1, GLColor::red);
+}
+
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(DepthStencilTest);
+ANGLE_INSTANTIATE_TEST_ES3(DepthStencilTestES3);
 
 }  // anonymous namespace

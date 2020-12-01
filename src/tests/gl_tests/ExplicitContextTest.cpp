@@ -31,8 +31,8 @@ class ExplicitContextTest : public ANGLETest
 // Test to ensure that the basic functionality of the extension works.
 TEST_P(ExplicitContextTest, BasicTest)
 {
-    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_ANGLE_explicit_context") ||
-                       !extensionEnabled("GL_ANGLE_explicit_context_gles1"));
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_ANGLE_explicit_context") ||
+                       !IsGLExtensionEnabled("GL_ANGLE_explicit_context_gles1"));
 
     EGLContext context = getEGLWindow()->getContext();
 
@@ -48,8 +48,8 @@ TEST_P(ExplicitContextTest, BasicTest)
 // Test to ensure that extension works with eglGetProcAddress
 TEST_P(ExplicitContextTest, GetProcAddress)
 {
-    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_ANGLE_explicit_context") ||
-                       !extensionEnabled("GL_ANGLE_explicit_context_gles1"));
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_ANGLE_explicit_context") ||
+                       !IsGLExtensionEnabled("GL_ANGLE_explicit_context_gles1"));
 
     EGLContext context = getEGLWindow()->getContext();
 
@@ -65,8 +65,8 @@ TEST_P(ExplicitContextTest, GetProcAddress)
 // Test to ensure that a passed context of null results in a no-op
 TEST_P(ExplicitContextTest, NullContext)
 {
-    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_ANGLE_explicit_context") ||
-                       !extensionEnabled("GL_ANGLE_explicit_context_gles1"));
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_ANGLE_explicit_context") ||
+                       !IsGLExtensionEnabled("GL_ANGLE_explicit_context_gles1"));
 
     EGLContext context = getEGLWindow()->getContext();
 
@@ -87,11 +87,6 @@ TEST_P(ExplicitContextTest, NullContext)
 
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
-ANGLE_INSTANTIATE_TEST(ExplicitContextTest,
-                       ES2_D3D9(),
-                       ES2_D3D11(),
-                       ES2_OPENGL(),
-                       ES2_OPENGLES(),
-                       ES2_VULKAN());
+ANGLE_INSTANTIATE_TEST_ES2(ExplicitContextTest);
 
 }  // namespace angle

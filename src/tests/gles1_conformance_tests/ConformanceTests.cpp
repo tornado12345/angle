@@ -103,7 +103,9 @@ extern long TexCombineExec(void);
 extern long MatrixPaletteExec(void);
 
 // Test driver setup
-extern void ExtTestDriverSetup(void);
+void BufferSetup(void);
+void EpsilonSetup(void);
+void StateSetup(void);
 
 #define CONFORMANCE_TEST_ERROR (-1)
 
@@ -128,15 +130,18 @@ class GLES1ConformanceTest : public ANGLETest
         setConfigStencilBits(8);
     }
 
-    void SetUp() override
+    void testSetUp() override
     {
-        ANGLETest::SetUp();
-        ExtTestDriverSetup();
+        BufferSetup();
+        EpsilonSetup();
+        StateSetup();
     }
 };
 
 TEST_P(GLES1ConformanceTest, AmbLight)
 {
+    // Flaky timeouts due to slow test. http://anglebug.com/5234
+    ANGLE_SKIP_TEST_IF(IsVulkan());
     ASSERT_NE(CONFORMANCE_TEST_ERROR, AmbLightExec());
 }
 
@@ -182,6 +187,8 @@ TEST_P(GLES1ConformanceTest, BCorner)
 
 TEST_P(GLES1ConformanceTest, Blend)
 {
+    // Slow test, takes over 20 seconds in some configs. http://anglebug.com/5171
+    ANGLE_SKIP_TEST_IF(IsVulkan() && IsIntel() && IsWindows());
     ASSERT_NE(CONFORMANCE_TEST_ERROR, BlendExec());
 }
 
@@ -258,6 +265,8 @@ TEST_P(GLES1ConformanceTest, LineHV)
 
 TEST_P(GLES1ConformanceTest, LineRaster)
 {
+    // http://g.co/anglebug/3862
+    ANGLE_SKIP_TEST_IF(IsVulkan());
     ASSERT_NE(CONFORMANCE_TEST_ERROR, LineRasterExec());
 }
 
@@ -348,6 +357,8 @@ TEST_P(GLES1ConformanceTest, Scissor)
 
 TEST_P(GLES1ConformanceTest, SPClear)
 {
+    // http://g.co/anglebug/3863
+    ANGLE_SKIP_TEST_IF(IsVulkan());
     ASSERT_NE(CONFORMANCE_TEST_ERROR, SPClearExec());
 }
 
@@ -403,6 +414,8 @@ TEST_P(GLES1ConformanceTest, SpotExpPos)
 
 TEST_P(GLES1ConformanceTest, SpotExpDir)
 {
+    // http://crbug.com/1136238
+    ANGLE_SKIP_TEST_IF(IsWindows() && IsVulkan());
     ASSERT_NE(CONFORMANCE_TEST_ERROR, SpotExpDirExec());
 }
 
@@ -469,6 +482,8 @@ TEST_P(GLES1ConformanceTest, XFormHomogenous)
 
 TEST_P(GLES1ConformanceTest, ZBClear)
 {
+    // http://g.co/anglebug/3864
+    ANGLE_SKIP_TEST_IF(IsVulkan());
     ASSERT_NE(CONFORMANCE_TEST_ERROR, ZBClearExec());
 }
 
@@ -479,7 +494,7 @@ TEST_P(GLES1ConformanceTest, ZBFunc)
 
 TEST_P(GLES1ConformanceTest, DrawTex)
 {
-    ASSERT_TRUE(extensionEnabled("GL_OES_draw_texture"));
+    ASSERT_TRUE(IsGLExtensionEnabled("GL_OES_draw_texture"));
     ASSERT_NE(CONFORMANCE_TEST_ERROR, DrawTexExec());
 }
 
@@ -547,5 +562,8 @@ TEST_P(GLES1ConformanceTest, MatrixPalette)
     ASSERT_NE(CONFORMANCE_TEST_ERROR, MatrixPaletteExec());
 }
 
-ANGLE_INSTANTIATE_TEST(GLES1ConformanceTest, ES1_OPENGL());
+ANGLE_INSTANTIATE_TEST(GLES1ConformanceTest, ES1_OPENGL(), ES1_VULKAN());
 }  // namespace angle
+
+// Included here to fix a compile error due to white box tests using angle_end2end_tests_main.
+void RegisterContextCompatibilityTests() {}

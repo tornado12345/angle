@@ -15,6 +15,7 @@
 
 namespace rx
 {
+class TransformFeedbackVk;
 
 class QueryVk : public QueryImpl
 {
@@ -33,13 +34,30 @@ class QueryVk : public QueryImpl
     angle::Result getResult(const gl::Context *context, GLuint64 *params) override;
     angle::Result isResultAvailable(const gl::Context *context, bool *available) override;
 
+    void onTransformFeedbackEnd(GLsizeiptr primitivesDrawn);
+    vk::QueryHelper *getQueryHelper() { return &mQueryHelper; }
+    angle::Result stashQueryHelper(ContextVk *contextVk);
+
+    bool isRenderPassQuery(ContextVk *contextVk) const;
+
   private:
     angle::Result getResult(const gl::Context *context, bool wait);
 
-    // Used for AnySamples, AnySamplesConservative, Timestamp and TimeElapsed (end)
+    bool isUsedInRecordedCommands() const;
+    bool isCurrentlyInUse(Serial lastCompletedSerial) const;
+    angle::Result finishRunningCommands(ContextVk *contextVk);
+    uint32_t getQueryResultCount() const;
+    angle::Result accumulateStashedQueryResult(ContextVk *contextVk, vk::QueryResult *result);
+
+    // Used for AnySamples, AnySamplesConservative, Timestamp and TimeElapsed (end).
     vk::QueryHelper mQueryHelper;
-    // An additional query used for TimeElapsed (begin), as it is implemented using Timestamp
+    // Used for occlusion query that we may end up with multiple outstanding query helper objects.
+    std::vector<vk::QueryHelper> mStashedQueryHelpers;
+    // An additional query used for TimeElapsed (begin), as it is implemented using Timestamp.
     vk::QueryHelper mQueryHelperTimeElapsedBegin;
+    // Used with TransformFeedbackPrimitivesWritten when transform feedback is emulated.
+    size_t mTransformFeedbackPrimitivesDrawn;
+
     uint64_t mCachedResult;
     bool mCachedResultValid;
 };

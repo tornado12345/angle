@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2015 The ANGLE Project Authors. All rights reserved.
+// Copyright 2015 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -14,6 +14,7 @@
 #include "libANGLE/State.h"
 #include "libANGLE/angletypes.h"
 #include "libANGLE/renderer/gl/functionsgl_typedefs.h"
+#include "platform/FeaturesGL.h"
 
 #include <map>
 
@@ -38,7 +39,8 @@ class StateManagerGL final : angle::NonCopyable
   public:
     StateManagerGL(const FunctionsGL *functions,
                    const gl::Caps &rendererCaps,
-                   const gl::Extensions &extensions);
+                   const gl::Extensions &extensions,
+                   const angle::FeaturesGL &features);
     ~StateManagerGL();
 
     void deleteProgram(GLuint program);
@@ -62,6 +64,7 @@ class StateManagerGL final : angle::NonCopyable
                          size_t size);
     void activeTexture(size_t unit);
     void bindTexture(gl::TextureType type, GLuint texture);
+    void invalidateTexture(gl::TextureType type);
     void bindSampler(size_t unit, GLuint sampler);
     void bindImageTexture(size_t unit,
                           GLuint texture,
@@ -81,22 +84,15 @@ class StateManagerGL final : angle::NonCopyable
 
     void setScissorTestEnabled(bool enabled);
     void setScissor(const gl::Rectangle &scissor);
-    void setScissorIndexed(GLuint index, const gl::Rectangle &scissor);
-    void setScissorArrayv(GLuint first, const std::vector<gl::Rectangle> &viewports);
 
     void setViewport(const gl::Rectangle &viewport);
-    void setViewportArrayv(GLuint first, const std::vector<gl::Rectangle> &viewports);
     void setDepthRange(float near, float far);
 
-    void setSideBySide(bool isSideBySide);
-
     void setBlendEnabled(bool enabled);
+    void setBlendEnabledIndexed(const gl::DrawBufferMask blendEnabledMask);
     void setBlendColor(const gl::ColorF &blendColor);
-    void setBlendFuncs(GLenum sourceBlendRGB,
-                       GLenum destBlendRGB,
-                       GLenum sourceBlendAlpha,
-                       GLenum destBlendAlpha);
-    void setBlendEquations(GLenum blendEquationRGB, GLenum blendEquationAlpha);
+    void setBlendFuncs(const gl::BlendStateExt &blendStateExt);
+    void setBlendEquations(const gl::BlendStateExt &blendStateExt);
     void setColorMask(bool red, bool green, bool blue, bool alpha);
     void setSampleAlphaToCoverageEnabled(bool enabled);
     void setSampleCoverageEnabled(bool enabled);
@@ -123,21 +119,25 @@ class StateManagerGL final : angle::NonCopyable
     void setRasterizerDiscardEnabled(bool enabled);
     void setLineWidth(float width);
 
-    void setPrimitiveRestartEnabled(bool enabled);
+    angle::Result setPrimitiveRestartEnabled(const gl::Context *context, bool enabled);
+    angle::Result setPrimitiveRestartIndex(const gl::Context *context, GLuint index);
 
     void setClearColor(const gl::ColorF &clearColor);
     void setClearDepth(float clearDepth);
     void setClearStencil(GLint clearStencil);
 
-    void setPixelUnpackState(const gl::PixelUnpackState &unpack);
-    void setPixelUnpackBuffer(const gl::Buffer *pixelBuffer);
-    void setPixelPackState(const gl::PixelPackState &pack);
-    void setPixelPackBuffer(const gl::Buffer *pixelBuffer);
+    angle::Result setPixelUnpackState(const gl::Context *context,
+                                      const gl::PixelUnpackState &unpack);
+    angle::Result setPixelUnpackBuffer(const gl::Context *context, const gl::Buffer *pixelBuffer);
+    angle::Result setPixelPackState(const gl::Context *context, const gl::PixelPackState &pack);
+    angle::Result setPixelPackBuffer(const gl::Context *context, const gl::Buffer *pixelBuffer);
 
     void setFramebufferSRGBEnabled(const gl::Context *context, bool enabled);
     void setFramebufferSRGBEnabledForFramebuffer(const gl::Context *context,
                                                  bool enabled,
                                                  const FramebufferGL *framebuffer);
+    void setColorMaskForFramebuffer(const gl::BlendStateExt &blendStateExt,
+                                    const bool disableAlpha);
 
     void setDitherEnabled(bool enabled);
 
@@ -146,11 +146,9 @@ class StateManagerGL final : angle::NonCopyable
 
     void setCoverageModulation(GLenum components);
 
-    void setPathRenderingModelViewMatrix(const GLfloat *m);
-    void setPathRenderingProjectionMatrix(const GLfloat *m);
-    void setPathRenderingStencilState(GLenum func, GLint ref, GLuint mask);
-
     void setProvokingVertex(GLenum mode);
+
+    void setClipDistancesEnable(const gl::State::ClipDistanceEnableBits &enables);
 
     void pauseTransformFeedback();
     angle::Result pauseAllQueries(const gl::Context *context);
@@ -159,9 +157,9 @@ class StateManagerGL final : angle::NonCopyable
     angle::Result resumeQuery(const gl::Context *context, gl::QueryType type);
     angle::Result onMakeCurrent(const gl::Context *context);
 
-    void syncState(const gl::Context *context,
-                   const gl::State::DirtyBits &glDirtyBits,
-                   const gl::State::DirtyBits &bitMask);
+    angle::Result syncState(const gl::Context *context,
+                            const gl::State::DirtyBits &glDirtyBits,
+                            const gl::State::DirtyBits &bitMask);
 
     ANGLE_INLINE void updateMultiviewBaseViewLayerIndexUniform(
         const gl::Program *program,
@@ -179,14 +177,13 @@ class StateManagerGL final : angle::NonCopyable
     {
         return mFramebuffers[binding];
     }
+    GLuint getBufferID(gl::BufferBinding binding) const { return mBuffers[binding]; }
+
+    void validateState() const;
 
   private:
     void setTextureCubemapSeamlessEnabled(bool enabled);
 
-    void applyViewportOffsetsAndSetScissors(const gl::Rectangle &scissor,
-                                            const gl::Framebuffer &drawFramebuffer);
-    void applyViewportOffsetsAndSetViewports(const gl::Rectangle &viewport,
-                                             const gl::Framebuffer &drawFramebuffer);
     void propagateProgramToVAO(const gl::Program *program, VertexArrayGL *vao);
 
     void updateProgramTextureBindings(const gl::Context *context);
@@ -206,6 +203,7 @@ class StateManagerGL final : angle::NonCopyable
         const gl::FramebufferState &drawFramebufferState) const;
 
     const FunctionsGL *mFunctions;
+    const angle::FeaturesGL &mFeatures;
 
     GLuint mProgram;
 
@@ -272,24 +270,15 @@ class StateManagerGL final : angle::NonCopyable
     GLuint mRenderbuffer;
 
     bool mScissorTestEnabled;
-    std::vector<gl::Rectangle> mScissors;
-    std::vector<gl::Rectangle> mViewports;
-    std::vector<gl::Offset> mViewportOffsets;
+    gl::Rectangle mScissor;
+    gl::Rectangle mViewport;
     float mNear;
     float mFar;
 
-    bool mBlendEnabled;
     gl::ColorF mBlendColor;
-    GLenum mSourceBlendRGB;
-    GLenum mDestBlendRGB;
-    GLenum mSourceBlendAlpha;
-    GLenum mDestBlendAlpha;
-    GLenum mBlendEquationRGB;
-    GLenum mBlendEquationAlpha;
-    bool mColorMaskRed;
-    bool mColorMaskGreen;
-    bool mColorMaskBlue;
-    bool mColorMaskAlpha;
+    gl::BlendStateExt mBlendStateExt;
+    const bool mIndependentBlendStates;
+
     bool mSampleAlphaToCoverageEnabled;
     bool mSampleCoverageEnabled;
     float mSampleCoverageValue;
@@ -326,12 +315,15 @@ class StateManagerGL final : angle::NonCopyable
     float mLineWidth;
 
     bool mPrimitiveRestartEnabled;
+    GLuint mPrimitiveRestartIndex;
 
     gl::ColorF mClearColor;
     float mClearDepth;
     GLint mClearStencil;
 
+    bool mFramebufferSRGBAvailable;
     bool mFramebufferSRGBEnabled;
+
     bool mDitherEnabled;
     bool mTextureCubemapSeamlessEnabled;
 
@@ -340,16 +332,12 @@ class StateManagerGL final : angle::NonCopyable
 
     GLenum mCoverageModulation;
 
-    GLfloat mPathMatrixMV[16];
-    GLfloat mPathMatrixProj[16];
-    GLenum mPathStencilFunc;
-    GLint mPathStencilRef;
-    GLuint mPathStencilMask;
-
-    bool mIsSideBySideDrawFramebuffer;
     const bool mIsMultiviewEnabled;
 
     GLenum mProvokingVertex;
+
+    gl::State::ClipDistanceEnableBits mEnabledClipDistances;
+    const size_t mMaxClipDistances;
 
     gl::State::DirtyBits mLocalDirtyBits;
     gl::AttributesMask mLocalDirtyCurrentValues;

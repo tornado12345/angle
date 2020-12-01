@@ -223,6 +223,11 @@ void init_instance_extension_names(struct sample_info &info)
 
 VkResult init_instance(struct sample_info &info, char const *const app_short_name)
 {
+    VkResult res = VK_SUCCESS;
+#if ANGLE_SHARED_LIBVULKAN
+    res = volkInitialize();
+    ASSERT(res == VK_SUCCESS);
+#endif  // ANGLE_SHARED_LIBVULKAN
     VkApplicationInfo app_info  = {};
     app_info.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app_info.pNext              = NULL;
@@ -243,8 +248,11 @@ VkResult init_instance(struct sample_info &info, char const *const app_short_nam
     inst_info.enabledExtensionCount   = info.instance_extension_names.size();
     inst_info.ppEnabledExtensionNames = info.instance_extension_names.data();
 
-    VkResult res = vkCreateInstance(&inst_info, NULL, &info.inst);
-    assert(res == VK_SUCCESS);
+    res = vkCreateInstance(&inst_info, NULL, &info.inst);
+    ASSERT(res == VK_SUCCESS);
+#if ANGLE_SHARED_LIBVULKAN
+    volkLoadInstance(info.inst);
+#endif  // ANGLE_SHARED_LIBVULKAN
 
     return res;
 }
@@ -257,19 +265,19 @@ void init_device_extension_names(struct sample_info &info)
 VkResult init_enumerate_device(struct sample_info &info, uint32_t gpu_count)
 {
     VkResult res = vkEnumeratePhysicalDevices(info.inst, &gpu_count, NULL);
-    assert(gpu_count);
+    ASSERT(gpu_count);
     info.gpus.resize(gpu_count);
 
     res = vkEnumeratePhysicalDevices(info.inst, &gpu_count, info.gpus.data());
-    assert(!res);
+    ASSERT(!res);
 
     vkGetPhysicalDeviceQueueFamilyProperties(info.gpus[0], &info.queue_family_count, NULL);
-    assert(info.queue_family_count >= 1);
+    ASSERT(info.queue_family_count >= 1);
 
     info.queue_props.resize(info.queue_family_count);
     vkGetPhysicalDeviceQueueFamilyProperties(info.gpus[0], &info.queue_family_count,
                                              info.queue_props.data());
-    assert(info.queue_family_count >= 1);
+    ASSERT(info.queue_family_count >= 1);
 
     /* This is as good a place as any to do this */
     vkGetPhysicalDeviceMemoryProperties(info.gpus[0], &info.memory_properties);
@@ -393,8 +401,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 void init_window(struct sample_info &info)
 {
     WNDCLASSEXA win_class;
-    assert(info.width > 0);
-    assert(info.height > 0);
+    ASSERT(info.width > 0);
+    ASSERT(info.height > 0);
 
     info.connection = GetModuleHandle(NULL);
     sprintf(info.name, "Sample");
@@ -465,8 +473,8 @@ void destroy_window(struct sample_info &info)
 
 void init_window(struct sample_info &info)
 {
-    assert(info.width > 0);
-    assert(info.height > 0);
+    ASSERT(info.width > 0);
+    ASSERT(info.height > 0);
 
     info.window = wl_compositor_create_surface(info.compositor);
     if (!info.window)
@@ -502,8 +510,8 @@ void destroy_window(struct sample_info &info)
 
 void init_window(struct sample_info &info)
 {
-    assert(info.width > 0);
-    assert(info.height > 0);
+    ASSERT(info.width > 0);
+    ASSERT(info.height > 0);
 
     uint32_t value_mask, value_list[32];
 
@@ -558,7 +566,7 @@ void init_window_size(struct sample_info &info, int32_t default_width, int32_t d
 {
 #ifdef __ANDROID__
     info.mOSWindow = OSWindow::New();
-    assert(info.mOSWindow != nullptr);
+    ASSERT(info.mOSWindow != nullptr);
     info.mOSWindow->initialize("VulkanTest", default_width, default_height);
 #endif
     info.width  = default_width;
@@ -602,7 +610,7 @@ void init_swapchain_extension(struct sample_info &info)
     createInfo.window = info.window;
     res = vkCreateXcbSurfaceKHR(info.inst, &createInfo, NULL, &info.surface);
 #endif  // __ANDROID__  && _WIN32
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     // Iterate over each queue to learn whether it supports presenting:
     VkBool32 *pSupportsPresent = (VkBool32 *)malloc(info.queue_family_count * sizeof(VkBool32));
@@ -656,12 +664,12 @@ void init_swapchain_extension(struct sample_info &info)
     // Get the list of VkFormats that are supported:
     uint32_t formatCount;
     res = vkGetPhysicalDeviceSurfaceFormatsKHR(info.gpus[0], info.surface, &formatCount, NULL);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
     VkSurfaceFormatKHR *surfFormats =
         (VkSurfaceFormatKHR *)malloc(formatCount * sizeof(VkSurfaceFormatKHR));
     res =
         vkGetPhysicalDeviceSurfaceFormatsKHR(info.gpus[0], info.surface, &formatCount, surfFormats);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
     // If the format list includes just one entry of VK_FORMAT_UNDEFINED,
     // the surface has no preferred format.  Otherwise, at least one
     // supported format will be returned.
@@ -671,7 +679,7 @@ void init_swapchain_extension(struct sample_info &info)
     }
     else
     {
-        assert(formatCount >= 1);
+        ASSERT(formatCount >= 1);
         info.format = surfFormats[0].format;
     }
     free(surfFormats);
@@ -700,7 +708,10 @@ VkResult init_device(struct sample_info &info)
     device_info.pEnabledFeatures = NULL;
 
     res = vkCreateDevice(info.gpus[0], &device_info, NULL, &info.device);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
+#if ANGLE_SHARED_LIBVULKAN
+    volkLoadDevice(info.device);
+#endif  // ANGLE_SHARED_LIBVULKAN
 
     return res;
 }
@@ -717,7 +728,7 @@ void init_command_pool(struct sample_info &info, VkCommandPoolCreateFlags cmd_po
     cmd_pool_info.flags                   = cmd_pool_create_flags;
 
     res = vkCreateCommandPool(info.device, &cmd_pool_info, NULL, &info.cmd_pool);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_command_buffer(struct sample_info &info)
@@ -733,7 +744,7 @@ void init_command_buffer(struct sample_info &info)
     cmd.commandBufferCount          = 1;
 
     res = vkAllocateCommandBuffers(info.device, &cmd, &info.cmd);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_command_buffer_array(struct sample_info &info, int numBuffers)
@@ -741,7 +752,7 @@ void init_command_buffer_array(struct sample_info &info, int numBuffers)
     /* DEPENDS on init_swapchain_extension() and init_command_pool() */
     VkResult res;
     info.cmds.resize(numBuffers);
-    assert(info.cmds.data() != NULL);
+    ASSERT(info.cmds.data() != NULL);
 
     VkCommandBufferAllocateInfo cmd = {};
     cmd.sType                       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -751,7 +762,7 @@ void init_command_buffer_array(struct sample_info &info, int numBuffers)
     cmd.commandBufferCount          = numBuffers;
 
     res = vkAllocateCommandBuffers(info.device, &cmd, info.cmds.data());
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_command_buffer2_array(struct sample_info &info, int numBuffers)
@@ -767,7 +778,7 @@ void init_command_buffer2_array(struct sample_info &info, int numBuffers)
     cmd.commandBufferCount          = numBuffers;
 
     res = vkAllocateCommandBuffers(info.device, &cmd, info.cmd2s.data());
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_device_queue(struct sample_info &info)
@@ -793,18 +804,18 @@ void init_swap_chain(struct sample_info &info, VkImageUsageFlags usageFlags)
     VkSurfaceCapabilitiesKHR surfCapabilities;
 
     res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(info.gpus[0], info.surface, &surfCapabilities);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     uint32_t presentModeCount;
     res = vkGetPhysicalDeviceSurfacePresentModesKHR(info.gpus[0], info.surface, &presentModeCount,
                                                     NULL);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
     VkPresentModeKHR *presentModes =
         (VkPresentModeKHR *)malloc(presentModeCount * sizeof(VkPresentModeKHR));
-    assert(presentModes);
+    ASSERT(presentModes);
     res = vkGetPhysicalDeviceSurfacePresentModesKHR(info.gpus[0], info.surface, &presentModeCount,
                                                     presentModes);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     VkExtent2D swapchainExtent;
     // width and height are either both 0xFFFFFFFF, or both not 0xFFFFFFFF.
@@ -922,16 +933,16 @@ void init_swap_chain(struct sample_info &info, VkImageUsageFlags usageFlags)
     }
 
     res = vkCreateSwapchainKHR(info.device, &swapchain_ci, NULL, &info.swap_chain);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     res = vkGetSwapchainImagesKHR(info.device, info.swap_chain, &info.swapchainImageCount, NULL);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     VkImage *swapchainImages = (VkImage *)malloc(info.swapchainImageCount * sizeof(VkImage));
-    assert(swapchainImages);
+    ASSERT(swapchainImages);
     res = vkGetSwapchainImagesKHR(info.device, info.swap_chain, &info.swapchainImageCount,
                                   swapchainImages);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     for (uint32_t i = 0; i < info.swapchainImageCount; i++)
     {
@@ -959,7 +970,7 @@ void init_swap_chain(struct sample_info &info, VkImageUsageFlags usageFlags)
 
         res = vkCreateImageView(info.device, &color_image_view, NULL, &sc_buffer.view);
         info.buffers.push_back(sc_buffer);
-        assert(res == VK_SUCCESS);
+        ASSERT(res == VK_SUCCESS);
     }
     free(swapchainImages);
     info.current_buffer = 0;
@@ -1077,7 +1088,7 @@ void init_depth_buffer(struct sample_info &info)
 
     /* Create image */
     res = vkCreateImage(info.device, &image_info, NULL, &info.depth.image);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     vkGetImageMemoryRequirements(info.device, info.depth.image, &mem_reqs);
 
@@ -1086,20 +1097,20 @@ void init_depth_buffer(struct sample_info &info)
     pass = memory_type_from_properties(info, mem_reqs.memoryTypeBits,
                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                        &mem_alloc.memoryTypeIndex);
-    assert(pass);
+    ASSERT(pass);
 
     /* Allocate memory */
     res = vkAllocateMemory(info.device, &mem_alloc, NULL, &info.depth.mem);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     /* Bind memory */
     res = vkBindImageMemory(info.device, info.depth.image, info.depth.mem, 0);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     /* Create image view */
     view_info.image = info.depth.image;
     res             = vkCreateImageView(info.device, &view_info, NULL, &info.depth.view);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_uniform_buffer(struct sample_info &info)
@@ -1121,7 +1132,7 @@ void init_uniform_buffer(struct sample_info &info)
     buf_info.sharingMode           = VK_SHARING_MODE_EXCLUSIVE;
     buf_info.flags                 = 0;
     res = vkCreateBuffer(info.device, &buf_info, NULL, &info.uniform_data.buf);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     VkMemoryRequirements mem_reqs;
     vkGetBufferMemoryRequirements(info.device, info.uniform_data.buf, &mem_reqs);
@@ -1136,21 +1147,21 @@ void init_uniform_buffer(struct sample_info &info)
         info, mem_reqs.memoryTypeBits,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         &alloc_info.memoryTypeIndex);
-    assert(pass && "No mappable, coherent memory");
+    ASSERT(pass && "No mappable, coherent memory");
 
     res = vkAllocateMemory(info.device, &alloc_info, NULL, &(info.uniform_data.mem));
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     uint8_t *pData;
     res = vkMapMemory(info.device, info.uniform_data.mem, 0, mem_reqs.size, 0, (void **)&pData);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     memcpy(pData, info.MVP.data(), sizeof(float) * 16);  // info.MVP.data() size
 
     vkUnmapMemory(info.device, info.uniform_data.mem);
 
     res = vkBindBufferMemory(info.device, info.uniform_data.buf, info.uniform_data.mem, 0);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     info.uniform_data.buffer_info.buffer = info.uniform_data.buf;
     info.uniform_data.buffer_info.offset = 0;
@@ -1191,7 +1202,7 @@ void init_descriptor_and_pipeline_layouts(struct sample_info &info,
     info.desc_layout.resize(NUM_DESCRIPTOR_SETS);
     res =
         vkCreateDescriptorSetLayout(info.device, &descriptor_layout, NULL, info.desc_layout.data());
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     /* Now use the descriptor layout to create a pipeline layout */
     VkPipelineLayoutCreateInfo pPipelineLayoutCreateInfo = {};
@@ -1204,7 +1215,7 @@ void init_descriptor_and_pipeline_layouts(struct sample_info &info,
 
     res = vkCreatePipelineLayout(info.device, &pPipelineLayoutCreateInfo, NULL,
                                  &info.pipeline_layout);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_renderpass(struct sample_info &info,
@@ -1271,7 +1282,7 @@ void init_renderpass(struct sample_info &info,
     rp_info.pDependencies          = NULL;
 
     res = vkCreateRenderPass(info.device, &rp_info, NULL, &info.render_pass);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_framebuffers(struct sample_info &info, bool include_depth)
@@ -1301,7 +1312,7 @@ void init_framebuffers(struct sample_info &info, bool include_depth)
     {
         attachments[0] = info.buffers[i].view;
         res            = vkCreateFramebuffer(info.device, &fb_info, NULL, &info.framebuffers[i]);
-        assert(res == VK_SUCCESS);
+        ASSERT(res == VK_SUCCESS);
     }
 }
 
@@ -1324,7 +1335,7 @@ void init_vertex_buffer(struct sample_info &info,
     buf_info.sharingMode           = VK_SHARING_MODE_EXCLUSIVE;
     buf_info.flags                 = 0;
     res = vkCreateBuffer(info.device, &buf_info, NULL, &info.vertex_buffer.buf);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     VkMemoryRequirements mem_reqs;
     vkGetBufferMemoryRequirements(info.device, info.vertex_buffer.buf, &mem_reqs);
@@ -1339,23 +1350,23 @@ void init_vertex_buffer(struct sample_info &info,
         info, mem_reqs.memoryTypeBits,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         &alloc_info.memoryTypeIndex);
-    assert(pass && "No mappable, coherent memory");
+    ASSERT(pass && "No mappable, coherent memory");
 
     res = vkAllocateMemory(info.device, &alloc_info, NULL, &(info.vertex_buffer.mem));
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
     info.vertex_buffer.buffer_info.range  = mem_reqs.size;
     info.vertex_buffer.buffer_info.offset = 0;
 
     uint8_t *pData;
     res = vkMapMemory(info.device, info.vertex_buffer.mem, 0, mem_reqs.size, 0, (void **)&pData);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     memcpy(pData, vertexData, dataSize);
 
     vkUnmapMemory(info.device, info.vertex_buffer.mem);
 
     res = vkBindBufferMemory(info.device, info.vertex_buffer.buf, info.vertex_buffer.mem, 0);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     info.vi_binding.binding   = 0;
     info.vi_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -1395,7 +1406,7 @@ void init_descriptor_pool(struct sample_info &info, bool use_texture)
     descriptor_pool.pPoolSizes                 = type_count;
 
     res = vkCreateDescriptorPool(info.device, &descriptor_pool, NULL, &info.desc_pool);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_descriptor_set(struct sample_info &info)
@@ -1413,7 +1424,7 @@ void init_descriptor_set(struct sample_info &info)
 
     info.desc_set.resize(NUM_DESCRIPTOR_SETS);
     res = vkAllocateDescriptorSets(info.device, alloc_info, info.desc_set.data());
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 
     VkWriteDescriptorSet writes[2];
 
@@ -1495,7 +1506,7 @@ void init_shaders(struct sample_info &info, const char *vertShaderText, const ch
         info.shaderStages[0].pName               = "main";
 
         retVal = GLSLtoSPV(VK_SHADER_STAGE_VERTEX_BIT, vertShaderText, vtx_spv);
-        assert(retVal);
+        ASSERT(retVal);
 
         moduleCreateInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         moduleCreateInfo.pNext    = NULL;
@@ -1504,7 +1515,7 @@ void init_shaders(struct sample_info &info, const char *vertShaderText, const ch
         moduleCreateInfo.pCode    = vtx_spv.data();
         res                       = vkCreateShaderModule(info.device, &moduleCreateInfo, NULL,
                                    &info.shaderStages[0].module);
-        assert(res == VK_SUCCESS);
+        ASSERT(res == VK_SUCCESS);
     }
 
     if (fragShaderText)
@@ -1518,7 +1529,7 @@ void init_shaders(struct sample_info &info, const char *vertShaderText, const ch
         info.shaderStages[1].pName               = "main";
 
         retVal = GLSLtoSPV(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderText, frag_spv);
-        assert(retVal);
+        ASSERT(retVal);
 
         moduleCreateInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         moduleCreateInfo.pNext    = NULL;
@@ -1527,7 +1538,7 @@ void init_shaders(struct sample_info &info, const char *vertShaderText, const ch
         moduleCreateInfo.pCode    = frag_spv.data();
         res                       = vkCreateShaderModule(info.device, &moduleCreateInfo, NULL,
                                    &info.shaderStages[1].module);
-        assert(res == VK_SUCCESS);
+        ASSERT(res == VK_SUCCESS);
     }
 
     glslang::FinalizeProcess();
@@ -1544,19 +1555,18 @@ void init_pipeline_cache(struct sample_info &info)
     pipelineCache.pInitialData    = NULL;
     pipelineCache.flags           = 0;
     res = vkCreatePipelineCache(info.device, &pipelineCache, NULL, &info.pipelineCache);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_pipeline(struct sample_info &info, VkBool32 include_depth, VkBool32 include_vi)
 {
     VkResult res;
 
-    VkDynamicState dynamicStateEnables[VK_DYNAMIC_STATE_RANGE_SIZE];
+    std::vector<VkDynamicState> dynamicStateEnables;
     VkPipelineDynamicStateCreateInfo dynamicState = {};
-    memset(dynamicStateEnables, 0, sizeof dynamicStateEnables);
     dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicState.pNext             = NULL;
-    dynamicState.pDynamicStates    = dynamicStateEnables;
+    dynamicState.pDynamicStates    = NULL;
     dynamicState.dynamicStateCount = 0;
 
     VkPipelineVertexInputStateCreateInfo vi;
@@ -1620,12 +1630,14 @@ void init_pipeline(struct sample_info &info, VkBool32 include_depth, VkBool32 in
     vp.pNext                             = NULL;
     vp.flags                             = 0;
 #ifndef __ANDROID__
-    vp.viewportCount                                      = NUM_VIEWPORTS;
-    dynamicStateEnables[dynamicState.dynamicStateCount++] = VK_DYNAMIC_STATE_VIEWPORT;
-    vp.scissorCount                                       = NUM_SCISSORS;
-    dynamicStateEnables[dynamicState.dynamicStateCount++] = VK_DYNAMIC_STATE_SCISSOR;
-    vp.pScissors                                          = NULL;
-    vp.pViewports                                         = NULL;
+    vp.viewportCount = NUM_VIEWPORTS;
+    dynamicState.dynamicStateCount++;
+    dynamicStateEnables.push_back(VK_DYNAMIC_STATE_VIEWPORT);
+    vp.scissorCount = NUM_SCISSORS;
+    dynamicState.dynamicStateCount++;
+    dynamicStateEnables.push_back(VK_DYNAMIC_STATE_SCISSOR);
+    vp.pScissors  = NULL;
+    vp.pViewports = NULL;
 #else
     // Temporary disabling dynamic viewport on Android because some of drivers doesn't
     // support the feature.
@@ -1699,9 +1711,15 @@ void init_pipeline(struct sample_info &info, VkBool32 include_depth, VkBool32 in
     pipeline.renderPass          = info.render_pass;
     pipeline.subpass             = 0;
 
+    if (dynamicStateEnables.size() > 0)
+    {
+        dynamicState.pDynamicStates    = dynamicStateEnables.data();
+        dynamicState.dynamicStateCount = dynamicStateEnables.size();
+    }
+
     res = vkCreateGraphicsPipelines(info.device, info.pipelineCache, 1, &pipeline, NULL,
                                     &info.pipeline);
-    assert(res == VK_SUCCESS);
+    ASSERT(res == VK_SUCCESS);
 }
 
 void init_viewports(struct sample_info &info)

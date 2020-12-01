@@ -10,7 +10,7 @@
 
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 
-#include <VersionHelpers.h>
+#include <versionhelpers.h>
 
 namespace rx
 {
@@ -19,10 +19,13 @@ DebugAnnotator11::DebugAnnotator11() {}
 
 DebugAnnotator11::~DebugAnnotator11() {}
 
-void DebugAnnotator11::beginEvent(const char *eventName, const char *eventMessage)
+void DebugAnnotator11::beginEvent(gl::Context *context,
+                                  angle::EntryPoint entryPoint,
+                                  const char *eventName,
+                                  const char *eventMessage)
 {
-    angle::LoggingAnnotator::beginEvent(eventName, eventMessage);
-    if (mUserDefinedAnnotation != nullptr)
+    angle::LoggingAnnotator::beginEvent(context, entryPoint, eventName, eventMessage);
+    if (loggingEnabledForThisThread())
     {
         std::mbstate_t state = std::mbstate_t();
         std::mbsrtowcs(mWCharMessage, &eventMessage, kMaxMessageLength, &state);
@@ -30,10 +33,12 @@ void DebugAnnotator11::beginEvent(const char *eventName, const char *eventMessag
     }
 }
 
-void DebugAnnotator11::endEvent(const char *eventName)
+void DebugAnnotator11::endEvent(gl::Context *context,
+                                const char *eventName,
+                                angle::EntryPoint entryPoint)
 {
-    angle::LoggingAnnotator::endEvent(eventName);
-    if (mUserDefinedAnnotation != nullptr)
+    angle::LoggingAnnotator::endEvent(context, eventName, entryPoint);
+    if (loggingEnabledForThisThread())
     {
         mUserDefinedAnnotation->EndEvent();
     }
@@ -42,7 +47,7 @@ void DebugAnnotator11::endEvent(const char *eventName)
 void DebugAnnotator11::setMarker(const char *markerName)
 {
     angle::LoggingAnnotator::setMarker(markerName);
-    if (mUserDefinedAnnotation != nullptr)
+    if (loggingEnabledForThisThread())
     {
         std::mbstate_t state = std::mbstate_t();
         std::mbsrtowcs(mWCharMessage, &markerName, kMaxMessageLength, &state);
@@ -52,7 +57,7 @@ void DebugAnnotator11::setMarker(const char *markerName)
 
 bool DebugAnnotator11::getStatus()
 {
-    if (mUserDefinedAnnotation != nullptr)
+    if (loggingEnabledForThisThread())
     {
         return !!(mUserDefinedAnnotation->GetStatus());
     }
@@ -60,15 +65,23 @@ bool DebugAnnotator11::getStatus()
     return false;
 }
 
+bool DebugAnnotator11::loggingEnabledForThisThread() const
+{
+    return mUserDefinedAnnotation != nullptr && std::this_thread::get_id() == mAnnotationThread;
+}
+
 void DebugAnnotator11::initialize(ID3D11DeviceContext *context)
 {
+#if !defined(ANGLE_ENABLE_WINDOWS_UWP)
     // ID3DUserDefinedAnnotation.GetStatus only works on Windows10 or greater.
     // Returning true unconditionally from DebugAnnotator11::getStatus() means
     // writing out all compiled shaders to temporary files even if debugging
     // tools are not attached. See rx::ShaderD3D::prepareSourceAndReturnOptions.
     // If you want debug annotations, you must use Windows 10.
     if (IsWindows10OrGreater())
+#endif
     {
+        mAnnotationThread = std::this_thread::get_id();
         mUserDefinedAnnotation.Attach(
             d3d11::DynamicCastComObject<ID3DUserDefinedAnnotation>(context));
     }

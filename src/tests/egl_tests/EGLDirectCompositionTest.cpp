@@ -20,9 +20,9 @@
 #include <memory>
 
 #include "libANGLE/renderer/d3d/d3d11/converged/CompositorNativeWindow11.h"
-#include "test_utils/ANGLETest.h"
 #include "util/OSWindow.h"
 #include "util/com_utils.h"
+#include "util/test_utils.h"
 
 using namespace angle;
 using namespace ABI::Windows::System;
@@ -39,7 +39,7 @@ class EGLDirectCompositionTest : public ANGLETest
   protected:
     EGLDirectCompositionTest() : mOSWindow(nullptr) {}
 
-    void SetUp() override
+    void testSetUp() override
     {
         if (!mRoHelper.SupportedWindowsRelease())
         {
@@ -51,7 +51,7 @@ class EGLDirectCompositionTest : public ANGLETest
 
         mOSWindow->initialize("EGLDirectCompositionTest", WINDOWWIDTH, WINDOWHEIGHT);
         auto nativeWindow = mOSWindow->getNativeWindow();
-        mOSWindow->setVisible(true);
+        setWindowVisible(mOSWindow, true);
 
         // Create DispatcherQueue for window to process compositor callbacks
         CreateDispatcherQueue(mDispatcherController);
@@ -192,7 +192,7 @@ class EGLDirectCompositionTest : public ANGLETest
         ASSERT_TRUE(eglMakeCurrent(mEglDisplay, surface, surface, mEglContext) != EGL_FALSE);
     }
 
-    void TearDown() override
+    void testTearDown() override
     {
         if (!mRoHelper.SupportedWindowsRelease())
         {
@@ -256,6 +256,9 @@ TEST_P(EGLDirectCompositionTest, RenderSolidColor)
     // Only attempt this test when on Windows 10 1803+
     ANGLE_SKIP_TEST_IF(!mRoHelper.SupportedWindowsRelease());
 
+    // http://crbug.com/1063962
+    ANGLE_SKIP_TEST_IF(isD3D11Renderer() && IsIntel());
+
     EGLSurface s{nullptr};
     CreateSurface(mAngleHost, s);
 
@@ -290,4 +293,4 @@ TEST_P(EGLDirectCompositionTest, RenderSolidColor)
     ASSERT_EGL_TRUE(eglDestroyContext(mEglDisplay, mEglContext));
 }
 
-ANGLE_INSTANTIATE_TEST(EGLDirectCompositionTest, ES2_D3D11());
+ANGLE_INSTANTIATE_TEST(EGLDirectCompositionTest, WithNoFixture(ES2_D3D11()));

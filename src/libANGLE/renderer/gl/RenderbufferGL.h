@@ -11,10 +11,15 @@
 
 #include "libANGLE/renderer/RenderbufferImpl.h"
 
+namespace angle
+{
+struct FeaturesGL;
+}  // namespace angle
+
 namespace gl
 {
 class TextureCapsMap;
-}
+}  // namespace gl
 
 namespace rx
 {
@@ -22,28 +27,25 @@ namespace rx
 class BlitGL;
 class FunctionsGL;
 class StateManagerGL;
-struct WorkaroundsGL;
 
 class RenderbufferGL : public RenderbufferImpl
 {
   public:
-    RenderbufferGL(const gl::RenderbufferState &state,
-                   const FunctionsGL *functions,
-                   const WorkaroundsGL &workarounds,
-                   StateManagerGL *stateManager,
-                   BlitGL *blitter,
-                   const gl::TextureCapsMap &textureCaps);
+    RenderbufferGL(const gl::RenderbufferState &state, GLuint id);
     ~RenderbufferGL() override;
+
+    void onDestroy(const gl::Context *context) override;
 
     angle::Result setStorage(const gl::Context *context,
                              GLenum internalformat,
-                             size_t width,
-                             size_t height) override;
+                             GLsizei width,
+                             GLsizei height) override;
     angle::Result setStorageMultisample(const gl::Context *context,
-                                        size_t samples,
+                                        GLsizei samples,
                                         GLenum internalformat,
-                                        size_t width,
-                                        size_t height) override;
+                                        GLsizei width,
+                                        GLsizei height,
+                                        gl::MultisamplingMode mode) override;
     angle::Result setStorageEGLImageTarget(const gl::Context *context, egl::Image *image) override;
 
     angle::Result initializeContents(const gl::Context *context,
@@ -53,12 +55,6 @@ class RenderbufferGL : public RenderbufferImpl
     GLenum getNativeInternalFormat() const;
 
   private:
-    const FunctionsGL *mFunctions;
-    const WorkaroundsGL &mWorkarounds;
-    StateManagerGL *mStateManager;
-    BlitGL *mBlitter;
-    const gl::TextureCapsMap &mTextureCaps;
-
     GLuint mRenderbufferID;
 
     GLenum mNativeInternalFormat;

@@ -37,8 +37,7 @@ class LinkAndRelinkTestES31 : public ANGLETest
 // or vice versa.
 
 // When program link fails and no valid rendering program is installed in the GL
-// state before the link, it should report an error for UseProgram and
-// DrawArrays/DrawElements.
+// state before the link, it should report an error for UseProgram
 TEST_P(LinkAndRelinkTest, RenderingProgramFailsWithoutProgramInstalled)
 {
     glUseProgram(0);
@@ -53,7 +52,7 @@ TEST_P(LinkAndRelinkTest, RenderingProgramFailsWithoutProgramInstalled)
     EXPECT_GL_ERROR(GL_INVALID_OPERATION);
 
     glDrawArrays(GL_POINTS, 0, 1);
-    EXPECT_GL_ERROR(GL_INVALID_OPERATION);
+    EXPECT_GL_NO_ERROR();
 }
 
 // When program link or relink fails and a valid rendering program is installed
@@ -156,6 +155,46 @@ TEST_P(LinkAndRelinkTest, RenderingProgramFailsWithProgramInstalled)
     EXPECT_GL_ERROR(GL_INVALID_OPERATION);
 }
 
+// Tests uniform default values.
+TEST_P(LinkAndRelinkTest, UniformDefaultValues)
+{
+    // TODO(anglebug.com/3969): Understand why rectangle texture CLs made this fail.
+    ANGLE_SKIP_TEST_IF(IsOzone() && IsIntel());
+    constexpr char kFS[] = R"(precision mediump float;
+uniform vec4 u_uniform;
+
+bool isZero(vec4 value) {
+    return value == vec4(0,0,0,0);
+}
+
+void main()
+{
+    gl_FragColor = isZero(u_uniform) ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);
+})";
+
+    ANGLE_GL_PROGRAM(program, essl1_shaders::vs::Simple(), kFS);
+    glUseProgram(program);
+
+    drawQuad(program, essl1_shaders::PositionAttrib(), 0.5f, 1.0f, true);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    GLint loc = glGetUniformLocation(program, "u_uniform");
+    ASSERT_NE(-1, loc);
+    glUniform4f(loc, 0.1f, 0.2f, 0.3f, 0.4f);
+
+    drawQuad(program, essl1_shaders::PositionAttrib(), 0.5f, 1.0f, true);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
+
+    glLinkProgram(program);
+    ASSERT_GL_NO_ERROR();
+
+    drawQuad(program, essl1_shaders::PositionAttrib(), 0.5f, 1.0f, true);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+}
+
 // When program link fails and no valid compute program is installed in the GL
 // state before the link, it should report an error for UseProgram and
 // DispatchCompute.
@@ -179,7 +218,6 @@ TEST_P(LinkAndRelinkTestES31, ComputeProgramFailsWithoutProgramInstalled)
 // When program link or relink fails and a valid compute program is installed in
 // the GL state before the link, using the failed program via UseProgram should
 // report an error, but dispatching compute should succeed.
-// However, starting rendering always fails.
 TEST_P(LinkAndRelinkTestES31, ComputeProgramFailsWithProgramInstalled)
 {
     // Install a compute program in the GL state via UseProgram, then dispatch
@@ -212,7 +250,7 @@ TEST_P(LinkAndRelinkTestES31, ComputeProgramFailsWithProgramInstalled)
     EXPECT_GL_NO_ERROR();
 
     glDrawArrays(GL_POINTS, 0, 1);
-    EXPECT_GL_ERROR(GL_INVALID_OPERATION);
+    EXPECT_GL_NO_ERROR();
 
     // Link failure, and a valid program has been installed in the GL state.
     GLuint programNull = glCreateProgram();
@@ -226,7 +264,7 @@ TEST_P(LinkAndRelinkTestES31, ComputeProgramFailsWithProgramInstalled)
     EXPECT_GL_NO_ERROR();
 
     glDrawArrays(GL_POINTS, 0, 1);
-    EXPECT_GL_ERROR(GL_INVALID_OPERATION);
+    EXPECT_GL_NO_ERROR();
 
     // Using the unsuccessfully linked program should report an error.
     glUseProgram(programNull);
@@ -240,7 +278,7 @@ TEST_P(LinkAndRelinkTestES31, ComputeProgramFailsWithProgramInstalled)
     EXPECT_GL_NO_ERROR();
 
     glDrawArrays(GL_POINTS, 0, 1);
-    EXPECT_GL_ERROR(GL_INVALID_OPERATION);
+    EXPECT_GL_NO_ERROR();
 
     // We try to relink the installed program, but make it fail.
 
@@ -256,7 +294,7 @@ TEST_P(LinkAndRelinkTestES31, ComputeProgramFailsWithProgramInstalled)
     EXPECT_GL_NO_ERROR();
 
     glDrawArrays(GL_POINTS, 0, 1);
-    EXPECT_GL_ERROR(GL_INVALID_OPERATION);
+    EXPECT_GL_NO_ERROR();
 
     // Using the unsuccessfully relinked program should report an error.
     glUseProgram(program);
@@ -270,11 +308,11 @@ TEST_P(LinkAndRelinkTestES31, ComputeProgramFailsWithProgramInstalled)
     EXPECT_GL_NO_ERROR();
 
     glDrawArrays(GL_POINTS, 0, 1);
-    EXPECT_GL_ERROR(GL_INVALID_OPERATION);
+    EXPECT_GL_NO_ERROR();
 }
 
 // If you compile and link a compute program successfully and use the program,
-// then dispatching compute can succeed, while starting rendering will fail.
+// then dispatching compute and rendering can succeed (with undefined behavior).
 // If you relink the compute program to a rendering program when it is in use,
 // then dispatching compute will fail, but starting rendering can succeed.
 TEST_P(LinkAndRelinkTestES31, RelinkProgramSucceedsFromComputeToRendering)
@@ -307,7 +345,7 @@ void main()
     EXPECT_GL_NO_ERROR();
 
     glDrawArrays(GL_POINTS, 0, 1);
-    EXPECT_GL_ERROR(GL_INVALID_OPERATION);
+    EXPECT_GL_NO_ERROR();
 
     constexpr char kVS[] = "void main() {}";
     constexpr char kFS[] = "void main() {}";
@@ -344,6 +382,9 @@ void main()
 // then starting rendering will fail, but dispatching compute can succeed.
 TEST_P(LinkAndRelinkTestES31, RelinkProgramSucceedsFromRenderingToCompute)
 {
+    // http://anglebug.com/5072
+    ANGLE_SKIP_TEST_IF(IsIntel() && IsLinux() && IsOpenGL());
+
     constexpr char kVS[] = "void main() {}";
     constexpr char kFS[] = "void main() {}";
 
@@ -401,18 +442,10 @@ void main()
     EXPECT_GL_NO_ERROR();
 
     glDrawArrays(GL_POINTS, 0, 1);
-    EXPECT_GL_ERROR(GL_INVALID_OPERATION);
+    EXPECT_GL_NO_ERROR();
 }
 
-ANGLE_INSTANTIATE_TEST(LinkAndRelinkTest,
-                       ES2_OPENGL(),
-                       ES2_OPENGLES(),
-                       ES2_D3D9(),
-                       ES2_D3D11(),
-                       ES3_OPENGL(),
-                       ES3_OPENGLES(),
-                       ES3_D3D11(),
-                       ES2_VULKAN());
-ANGLE_INSTANTIATE_TEST(LinkAndRelinkTestES31, ES31_OPENGL(), ES31_OPENGLES());
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(LinkAndRelinkTest);
+ANGLE_INSTANTIATE_TEST_ES31(LinkAndRelinkTestES31);
 
 }  // namespace

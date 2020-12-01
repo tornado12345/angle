@@ -56,12 +56,13 @@ class MockBufferFactoryD3D : public rx::BufferFactoryD3D
     MOCK_METHOD0(createVertexBuffer, rx::VertexBuffer *());
     MOCK_CONST_METHOD1(getVertexConversionType, rx::VertexConversionType(angle::FormatID));
     MOCK_CONST_METHOD1(getVertexComponentType, GLenum(angle::FormatID));
-    MOCK_CONST_METHOD6(getVertexSpaceRequired,
+    MOCK_CONST_METHOD7(getVertexSpaceRequired,
                        angle::Result(const gl::Context *,
                                      const gl::VertexAttribute &,
                                      const gl::VertexBinding &,
                                      size_t,
                                      GLsizei,
+                                     GLuint,
                                      unsigned int *));
 
     // Dependency injection
@@ -158,13 +159,13 @@ class IndexDataManagerPerfTest : public ANGLEPerfTest
 };
 
 IndexDataManagerPerfTest::IndexDataManagerPerfTest()
-    : ANGLEPerfTest("IndexDataManger", "_run", kIterationsPerStep),
+    : ANGLEPerfTest("IndexDataManager", "", "_run", kIterationsPerStep),
       mIndexDataManager(&mMockBufferFactory),
       mIndexCount(4000),
       mBufferSize(mIndexCount * sizeof(GLushort)),
       mMockBufferFactory(mBufferSize, gl::DrawElementsType::UnsignedShort),
       mMockGLFactory(&mMockBufferFactory),
-      mIndexBuffer(&mMockGLFactory, 1)
+      mIndexBuffer(&mMockGLFactory, {1})
 {
     std::vector<GLushort> indexData(mIndexCount);
     for (GLsizei index = 0; index < mIndexCount; ++index)

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2016 The ANGLE Project Authors. All rights reserved.
+// Copyright 2016 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -49,10 +49,10 @@ struct LinkProgramParams final : public RenderTestParams
         threadOption = threadOptionIn;
     }
 
-    std::string suffix() const override
+    std::string story() const override
     {
         std::stringstream strstr;
-        strstr << RenderTestParams::suffix();
+        strstr << RenderTestParams::story();
 
         if (taskOption == TaskOption::CompileOnly)
         {
@@ -86,7 +86,7 @@ struct LinkProgramParams final : public RenderTestParams
 
 std::ostream &operator<<(std::ostream &os, const LinkProgramParams &params)
 {
-    os << params.suffix().substr(1);
+    os << params.backendAndStory().substr(1);
     return os;
 }
 
@@ -181,17 +181,10 @@ LinkProgramParams LinkProgramD3D11Params(TaskOption taskOption, ThreadOption thr
     return params;
 }
 
-LinkProgramParams LinkProgramD3D9Params(TaskOption taskOption, ThreadOption threadOption)
-{
-    LinkProgramParams params(taskOption, threadOption);
-    params.eglParameters = D3D9();
-    return params;
-}
-
 LinkProgramParams LinkProgramOpenGLOrGLESParams(TaskOption taskOption, ThreadOption threadOption)
 {
     LinkProgramParams params(taskOption, threadOption);
-    params.eglParameters = OPENGL_OR_GLES(false);
+    params.eglParameters = OPENGL_OR_GLES();
     return params;
 }
 
@@ -210,19 +203,15 @@ TEST_P(LinkProgramBenchmark, Run)
 ANGLE_INSTANTIATE_TEST(
     LinkProgramBenchmark,
     LinkProgramD3D11Params(TaskOption::CompileOnly, ThreadOption::MultiThread),
-    LinkProgramD3D9Params(TaskOption::CompileOnly, ThreadOption::MultiThread),
     LinkProgramOpenGLOrGLESParams(TaskOption::CompileOnly, ThreadOption::MultiThread),
     LinkProgramVulkanParams(TaskOption::CompileOnly, ThreadOption::MultiThread),
     LinkProgramD3D11Params(TaskOption::CompileAndLink, ThreadOption::MultiThread),
-    LinkProgramD3D9Params(TaskOption::CompileAndLink, ThreadOption::MultiThread),
     LinkProgramOpenGLOrGLESParams(TaskOption::CompileAndLink, ThreadOption::MultiThread),
     LinkProgramVulkanParams(TaskOption::CompileAndLink, ThreadOption::MultiThread),
     LinkProgramD3D11Params(TaskOption::CompileOnly, ThreadOption::SingleThread),
-    LinkProgramD3D9Params(TaskOption::CompileOnly, ThreadOption::SingleThread),
     LinkProgramOpenGLOrGLESParams(TaskOption::CompileOnly, ThreadOption::SingleThread),
     LinkProgramVulkanParams(TaskOption::CompileOnly, ThreadOption::SingleThread),
     LinkProgramD3D11Params(TaskOption::CompileAndLink, ThreadOption::SingleThread),
-    LinkProgramD3D9Params(TaskOption::CompileAndLink, ThreadOption::SingleThread),
     LinkProgramOpenGLOrGLESParams(TaskOption::CompileAndLink, ThreadOption::SingleThread),
     LinkProgramVulkanParams(TaskOption::CompileAndLink, ThreadOption::SingleThread));
 

@@ -1,5 +1,5 @@
 
-// Copyright (c) 2014 The ANGLE Project Authors. All rights reserved.
+// Copyright 2014 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -22,7 +22,8 @@
 #include "libANGLE/renderer/d3d/VertexDataManager.h"
 #include "libANGLE/renderer/d3d/formatutilsD3D.h"
 #include "libANGLE/renderer/renderer_utils.h"
-#include "platform/WorkaroundsD3D.h"
+#include "libANGLE/renderer/serial_utils.h"
+#include "platform/FeaturesD3D.h"
 
 namespace egl
 {
@@ -140,6 +141,7 @@ class BufferFactoryD3D : angle::NonCopyable
                                                  const gl::VertexBinding &binding,
                                                  size_t count,
                                                  GLsizei instances,
+                                                 GLuint baseInstance,
                                                  unsigned int *bytesRequiredOut) const = 0;
 };
 
@@ -180,8 +182,11 @@ class RendererD3D : public BufferFactoryD3D
                                           EGLint samples)                          = 0;
     virtual egl::Error getD3DTextureInfo(const egl::Config *configuration,
                                          IUnknown *d3dTexture,
+                                         const egl::AttributeMap &attribs,
                                          EGLint *width,
                                          EGLint *height,
+                                         GLsizei *samples,
+                                         gl::Format *glFormat,
                                          const angle::Format **angleFormat) const  = 0;
     virtual egl::Error validateShareHandle(const egl::Config *config,
                                            HANDLE shareHandle,
@@ -189,7 +194,9 @@ class RendererD3D : public BufferFactoryD3D
 
     virtual int getMajorShaderModel() const = 0;
 
-    const angle::WorkaroundsD3D &getWorkarounds() const;
+    virtual void setGlobalDebugAnnotator() = 0;
+
+    const angle::FeaturesD3D &getFeatures() const;
 
     // Pixel operations
     virtual angle::Result copyImage2D(const gl::Context *context,
@@ -274,7 +281,12 @@ class RendererD3D : public BufferFactoryD3D
     virtual UniformStorageD3D *createUniformStorage(size_t storageSize) = 0;
 
     // Image operations
-    virtual ImageD3D *createImage()                                                        = 0;
+    virtual ImageD3D *createImage() = 0;
+    virtual ExternalImageSiblingImpl *createExternalImageSibling(
+        const gl::Context *context,
+        EGLenum target,
+        EGLClientBuffer buffer,
+        const egl::AttributeMap &attribs)                                                  = 0;
     virtual angle::Result generateMipmap(const gl::Context *context,
                                          ImageD3D *dest,
                                          ImageD3D *source)                                 = 0;
@@ -336,6 +348,7 @@ class RendererD3D : public BufferFactoryD3D
     virtual bool supportsFastCopyBufferToTexture(GLenum internalFormat) const = 0;
     virtual angle::Result fastCopyBufferToTexture(const gl::Context *context,
                                                   const gl::PixelUnpackState &unpack,
+                                                  gl::Buffer *unpackBuffer,
                                                   unsigned int offset,
                                                   RenderTargetD3D *destRenderTarget,
                                                   GLenum destinationFormat,
@@ -343,7 +356,7 @@ class RendererD3D : public BufferFactoryD3D
                                                   const gl::Box &destArea)    = 0;
 
     // Device lost
-    GLenum getResetStatus();
+    gl::GraphicsResetStatus getResetStatus();
     void notifyDeviceLost();
     virtual bool resetDevice()          = 0;
     virtual bool testDeviceLost()       = 0;
@@ -380,7 +393,8 @@ class RendererD3D : public BufferFactoryD3D
     // Necessary hack for default framebuffers in D3D.
     virtual FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) = 0;
 
-    virtual gl::Version getMaxSupportedESVersion() const = 0;
+    virtual gl::Version getMaxSupportedESVersion() const  = 0;
+    virtual gl::Version getMaxConformantESVersion() const = 0;
 
     angle::Result initRenderTarget(const gl::Context *context, RenderTargetD3D *renderTarget);
 
@@ -408,7 +422,7 @@ class RendererD3D : public BufferFactoryD3D
   private:
     void ensureCapsInitialized() const;
 
-    virtual angle::WorkaroundsD3D generateWorkarounds() const = 0;
+    virtual void initializeFeatures(angle::FeaturesD3D *features) const = 0;
 
     mutable bool mCapsInitialized;
     mutable gl::Caps mNativeCaps;
@@ -416,8 +430,8 @@ class RendererD3D : public BufferFactoryD3D
     mutable gl::Extensions mNativeExtensions;
     mutable gl::Limitations mNativeLimitations;
 
-    mutable bool mWorkaroundsInitialized;
-    mutable angle::WorkaroundsD3D mWorkarounds;
+    mutable bool mFeaturesInitialized;
+    mutable angle::FeaturesD3D mFeatures;
 
     bool mDisjoint;
     bool mDeviceLost;
@@ -428,6 +442,11 @@ class RendererD3D : public BufferFactoryD3D
 unsigned int GetBlendSampleMask(const gl::State &glState, int samples);
 bool InstancedPointSpritesActive(ProgramD3D *programD3D, gl::PrimitiveMode mode);
 GLenum DefaultGLErrorCode(HRESULT hr);
+
+// Define stubs so we don't need to include D3D9/D3D11 headers directly.
+RendererD3D *CreateRenderer11(egl::Display *display);
+RendererD3D *CreateRenderer9(egl::Display *display);
+
 }  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_D3D_RENDERERD3D_H_

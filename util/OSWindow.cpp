@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2014 The ANGLE Project Authors. All rights reserved.
+// Copyright 2014 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -347,9 +347,16 @@ static void PrintEvent(const Event &event)
 }
 #endif
 
-OSWindow::OSWindow() : mX(0), mY(0), mWidth(0), mHeight(0) {}
+OSWindow::OSWindow() : mX(0), mY(0), mWidth(0), mHeight(0), mValid(false), mIgnoreSizeEvents(false)
+{}
 
 OSWindow::~OSWindow() {}
+
+bool OSWindow::initialize(const std::string &name, int width, int height)
+{
+    mValid = initializeImpl(name, width, height);
+    return mValid;
+}
 
 int OSWindow::getX() const
 {

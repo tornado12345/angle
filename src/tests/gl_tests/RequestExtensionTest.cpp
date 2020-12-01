@@ -25,21 +25,21 @@ class RequestExtensionTest : public ANGLETest
 // if possible
 TEST_P(RequestExtensionTest, ExtensionsDisabledByDefault)
 {
-    EXPECT_TRUE(eglDisplayExtensionEnabled(getEGLWindow()->getDisplay(),
-                                           "EGL_ANGLE_create_context_extensions_enabled"));
-    EXPECT_FALSE(extensionEnabled("GL_OES_rgb8_rgba8"));
+    EXPECT_TRUE(IsEGLDisplayExtensionEnabled(getEGLWindow()->getDisplay(),
+                                             "EGL_ANGLE_create_context_extensions_enabled"));
+    EXPECT_FALSE(IsGLExtensionEnabled("GL_OES_rgb8_rgba8"));
 
-    if (extensionRequestable("GL_OES_rgb8_rgba8"))
+    if (IsGLExtensionRequestable("GL_OES_rgb8_rgba8"))
     {
         glRequestExtensionANGLE("GL_OES_rgb8_rgba8");
-        EXPECT_TRUE(extensionEnabled("GL_OES_rgb8_rgba8"));
+        EXPECT_TRUE(IsGLExtensionEnabled("GL_OES_rgb8_rgba8"));
     }
 }
 
 // Test the queries for the requestable extension strings
 TEST_P(RequestExtensionTest, Queries)
 {
-    ANGLE_SKIP_TEST_IF(!extensionEnabled("GL_ANGLE_request_extension"));
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_ANGLE_request_extension"));
 
     const GLubyte *requestableExtString = glGetString(GL_REQUESTABLE_EXTENSIONS_ANGLE);
     EXPECT_GL_NO_ERROR();
@@ -69,13 +69,6 @@ TEST_P(RequestExtensionTest, Queries)
 
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
-ANGLE_INSTANTIATE_TEST(RequestExtensionTest,
-                       ES2_D3D11(),
-                       ES3_D3D11(),
-                       ES2_OPENGL(),
-                       ES3_OPENGL(),
-                       ES2_OPENGLES(),
-                       ES3_OPENGLES(),
-                       ES2_VULKAN());
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(RequestExtensionTest);
 
 }  // namespace angle

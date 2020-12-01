@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2002-2013 The ANGLE Project Authors. All rights reserved.
+// Copyright 2002 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -21,6 +21,7 @@
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/Observer.h"
 #include "libANGLE/RefCountObject.h"
+#include "libANGLE/State.h"
 
 namespace rx
 {
@@ -52,12 +53,12 @@ class TextureCapsMap;
 class FramebufferState final : angle::NonCopyable
 {
   public:
-    FramebufferState();
-    explicit FramebufferState(const Caps &caps, GLuint id);
+    explicit FramebufferState(rx::Serial serial);
+    FramebufferState(const Caps &caps, FramebufferID id, rx::Serial serial);
     ~FramebufferState();
 
-    const std::string &getLabel();
-    size_t getReadIndex() const;
+    const std::string &getLabel() const;
+    uint32_t getReadIndex() const;
 
     const FramebufferAttachment *getAttachment(const Context *context, GLenum attachment) const;
     const FramebufferAttachment *getReadAttachment() const;
@@ -69,6 +70,7 @@ class FramebufferState final : angle::NonCopyable
     const FramebufferAttachment *getDepthAttachment() const;
     const FramebufferAttachment *getStencilAttachment() const;
     const FramebufferAttachment *getDepthStencilAttachment() const;
+    const FramebufferAttachment *getReadPixelsAttachment(GLenum readFormat) const;
 
     const std::vector<GLenum> &getDrawBufferStates() const { return mDrawBufferStates; }
     DrawBufferMask getEnabledDrawBuffers() const { return mEnabledDrawBuffers; }
@@ -77,11 +79,13 @@ class FramebufferState final : angle::NonCopyable
     {
         return mColorAttachments;
     }
+    const DrawBufferMask getColorAttachmentsMask() const { return mColorAttachmentsMask; }
 
     bool attachmentsHaveSameDimensions() const;
     bool hasSeparateDepthAndStencilAttachments() const;
     bool colorAttachmentsAreUniqueImages() const;
     Box getDimensions() const;
+    Extents getExtents() const;
 
     const FramebufferAttachment *getDrawBuffer(size_t drawBufferIdx) const;
     size_t getDrawBufferCount() const;
@@ -95,7 +99,10 @@ class FramebufferState final : angle::NonCopyable
     bool hasDepth() const;
     bool hasStencil() const;
 
-    GLenum getMultiviewLayout() const;
+    bool hasExternalTextureAttachment() const;
+    bool hasYUVAttachment() const;
+
+    bool isMultiview() const;
 
     ANGLE_INLINE GLsizei getNumViews() const
     {
@@ -107,10 +114,15 @@ class FramebufferState final : angle::NonCopyable
         return attachment->getNumViews();
     }
 
-    const std::vector<Offset> *getViewportOffsets() const;
     GLint getBaseViewIndex() const;
 
-    GLuint id() const { return mId; }
+    FramebufferID id() const { return mId; }
+
+    bool isDefault() const;
+
+    const gl::Offset &getSurfaceTextureOffset() const { return mSurfaceTextureOffset; }
+
+    rx::Serial getFramebufferSerial() const { return mFramebufferSerial; }
 
   private:
     const FramebufferAttachment *getWebGLDepthStencilAttachment() const;
@@ -119,12 +131,18 @@ class FramebufferState final : angle::NonCopyable
 
     friend class Framebuffer;
 
-    GLuint mId;
+    // The Framebuffer ID is unique to a Context.
+    // The Framebuffer Serial is unique to a Share Group.
+    FramebufferID mId;
+    rx::Serial mFramebufferSerial;
     std::string mLabel;
 
     std::vector<FramebufferAttachment> mColorAttachments;
     FramebufferAttachment mDepthAttachment;
     FramebufferAttachment mStencilAttachment;
+
+    // Tracks all the color buffers attached to this FramebufferDesc
+    gl::DrawBufferMask mColorAttachmentsMask;
 
     std::vector<GLenum> mDrawBufferStates;
     GLenum mReadBufferState;
@@ -146,6 +164,11 @@ class FramebufferState final : angle::NonCopyable
 
     // Tracks if we need to initialize the resources for each attachment.
     angle::BitSet<IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS + 2> mResourceNeedsInit;
+
+    bool mDefaultFramebufferReadAttachmentInitialized;
+    FramebufferAttachment mDefaultFramebufferReadAttachment;
+
+    gl::Offset mSurfaceTextureOffset;
 };
 
 class Framebuffer final : public angle::ObserverInterface,
@@ -154,63 +177,73 @@ class Framebuffer final : public angle::ObserverInterface,
 {
   public:
     // Constructor to build application-defined framebuffers
-    Framebuffer(const Caps &caps, rx::GLImplFactory *factory, GLuint id);
+    Framebuffer(const Caps &caps,
+                rx::GLImplFactory *factory,
+                FramebufferID id,
+                egl::ShareGroup *shareGroup);
     // Constructor to build default framebuffers for a surface and context pair
-    Framebuffer(const Context *context, egl::Surface *surface);
+    Framebuffer(const Context *context, egl::Surface *surface, egl::Surface *readSurface);
     // Constructor to build a fake default framebuffer when surfaceless
-    Framebuffer(rx::GLImplFactory *factory);
+    Framebuffer(const Context *context, rx::GLImplFactory *factory, egl::Surface *readSurface);
 
     ~Framebuffer() override;
     void onDestroy(const Context *context);
 
+    void setReadSurface(const Context *context, egl::Surface *readSurface);
     void setLabel(const Context *context, const std::string &label) override;
     const std::string &getLabel() const override;
 
     rx::FramebufferImpl *getImplementation() const { return mImpl; }
 
-    GLuint id() const { return mState.mId; }
+    FramebufferID id() const { return mState.mId; }
 
     void setAttachment(const Context *context,
                        GLenum type,
                        GLenum binding,
                        const ImageIndex &textureIndex,
                        FramebufferAttachmentObject *resource);
-    void setAttachmentMultiviewLayered(const Context *context,
-                                       GLenum type,
-                                       GLenum binding,
-                                       const ImageIndex &textureIndex,
-                                       FramebufferAttachmentObject *resource,
-                                       GLsizei numViews,
-                                       GLint baseViewIndex);
-    void setAttachmentMultiviewSideBySide(const Context *context,
-                                          GLenum type,
-                                          GLenum binding,
-                                          const ImageIndex &textureIndex,
-                                          FramebufferAttachmentObject *resource,
-                                          GLsizei numViews,
-                                          const GLint *viewportOffsets);
+    void setAttachmentMultisample(const Context *context,
+                                  GLenum type,
+                                  GLenum binding,
+                                  const ImageIndex &textureIndex,
+                                  FramebufferAttachmentObject *resource,
+                                  GLsizei samples);
+    void setAttachmentMultiview(const Context *context,
+                                GLenum type,
+                                GLenum binding,
+                                const ImageIndex &textureIndex,
+                                FramebufferAttachmentObject *resource,
+                                GLsizei numViews,
+                                GLint baseViewIndex);
     void resetAttachment(const Context *context, GLenum binding);
 
-    bool detachTexture(const Context *context, GLuint texture);
-    bool detachRenderbuffer(const Context *context, GLuint renderbuffer);
+    bool detachTexture(const Context *context, TextureID texture);
+    bool detachRenderbuffer(const Context *context, RenderbufferID renderbuffer);
 
-    const FramebufferAttachment *getColorbuffer(size_t colorAttachment) const;
-    const FramebufferAttachment *getDepthbuffer() const;
-    const FramebufferAttachment *getStencilbuffer() const;
-    const FramebufferAttachment *getDepthStencilBuffer() const;
-    const FramebufferAttachment *getDepthOrStencilbuffer() const;
+    const FramebufferAttachment *getColorAttachment(size_t colorAttachment) const;
+    const FramebufferAttachment *getDepthAttachment() const;
+    const FramebufferAttachment *getStencilAttachment() const;
+    const FramebufferAttachment *getDepthStencilAttachment() const;
+    const FramebufferAttachment *getDepthOrStencilAttachment() const;
     const FramebufferAttachment *getStencilOrDepthStencilAttachment() const;
-    const FramebufferAttachment *getReadColorbuffer() const;
-    GLenum getReadColorbufferType() const;
-    const FramebufferAttachment *getFirstColorbuffer() const;
+    const FramebufferAttachment *getReadColorAttachment() const;
+    GLenum getReadColorAttachmentType() const;
+    const FramebufferAttachment *getFirstColorAttachment() const;
     const FramebufferAttachment *getFirstNonNullAttachment() const;
 
+    const std::vector<FramebufferAttachment> &getColorAttachments() const
+    {
+        return mState.mColorAttachments;
+    }
+
+    const FramebufferState &getState() const { return mState; }
+
     const FramebufferAttachment *getAttachment(const Context *context, GLenum attachment) const;
-    GLenum getMultiviewLayout() const;
+    bool isMultiview() const;
     bool readDisallowedByMultiview() const;
     GLsizei getNumViews() const;
     GLint getBaseViewIndex() const;
-    const std::vector<Offset> *getViewportOffsets() const;
+    Extents getExtents() const;
 
     size_t getDrawbufferStateCount() const;
     GLenum getDrawBufferState(size_t drawBuffer) const;
@@ -225,14 +258,18 @@ class Framebuffer final : public angle::ObserverInterface,
     GLenum getReadBufferState() const;
     void setReadBuffer(GLenum buffer);
 
-    size_t getNumColorBuffers() const;
+    size_t getNumColorAttachments() const;
     bool hasDepth() const;
     bool hasStencil() const;
+
+    bool hasExternalTextureAttachment() const;
+    bool hasYUVAttachment() const;
 
     bool usingExtendedDrawBuffers() const;
 
     // This method calls checkStatus.
-    int getSamples(const Context *context);
+    int getSamples(const Context *context) const;
+    int getReadBufferResourceSamples(const Context *context) const;
 
     angle::Result getSamplePosition(const Context *context, size_t index, GLfloat *xy) const;
 
@@ -247,14 +284,15 @@ class Framebuffer final : public angle::ObserverInterface,
     void setDefaultFixedSampleLocations(const Context *context, bool defaultFixedSampleLocations);
     void setDefaultLayers(GLint defaultLayers);
 
-    void invalidateCompletenessCache(const Context *context);
+    void invalidateCompletenessCache();
+    ANGLE_INLINE bool cachedStatusValid() { return mCachedStatus.valid(); }
 
-    ANGLE_INLINE GLenum checkStatus(const Context *context)
+    ANGLE_INLINE GLenum checkStatus(const Context *context) const
     {
         // The default framebuffer is always complete except when it is surfaceless in which
         // case it is always unsupported.
-        ASSERT(mState.mId != 0 || mCachedStatus.valid());
-        if (mState.mId == 0 || (!hasAnyDirtyBit() && mCachedStatus.valid()))
+        ASSERT(!isDefault() || mCachedStatus.valid());
+        if (isDefault() || (!hasAnyDirtyBit() && mCachedStatus.valid()))
         {
             return mCachedStatus.value();
         }
@@ -262,16 +300,18 @@ class Framebuffer final : public angle::ObserverInterface,
         return checkStatusImpl(context);
     }
 
-    // For when we don't want to check completeness in getSamples().
-    int getCachedSamples(const Context *context);
-
     // Helper for checkStatus == GL_FRAMEBUFFER_COMPLETE.
-    ANGLE_INLINE bool isComplete(const Context *context)
+    ANGLE_INLINE bool isComplete(const Context *context) const
     {
         return (checkStatus(context) == GL_FRAMEBUFFER_COMPLETE);
     }
 
     bool hasValidDepthStencil() const;
+
+    // Returns the offset into the texture backing the default framebuffer's surface if any. Returns
+    // zero offset otherwise.  The renderer will apply the offset to scissor and viewport rects used
+    // for draws, clears, and blits.
+    const gl::Offset &getSurfaceTextureOffset() const;
 
     angle::Result discard(const Context *context, size_t count, const GLenum *attachments);
     angle::Result invalidate(const Context *context, size_t count, const GLenum *attachments);
@@ -299,14 +339,15 @@ class Framebuffer final : public angle::ObserverInterface,
                                 GLfloat depth,
                                 GLint stencil);
 
-    // These two methods call syncState() internally.
-    angle::Result getImplementationColorReadFormat(const Context *context, GLenum *formatOut);
-    angle::Result getImplementationColorReadType(const Context *context, GLenum *typeOut);
+    GLenum getImplementationColorReadFormat(const Context *context);
+    GLenum getImplementationColorReadType(const Context *context);
 
     angle::Result readPixels(const Context *context,
                              const Rectangle &area,
                              GLenum format,
                              GLenum type,
+                             const PixelPackState &pack,
+                             Buffer *packBuffer,
                              void *pixels);
 
     angle::Result blit(const Context *context,
@@ -314,15 +355,20 @@ class Framebuffer final : public angle::ObserverInterface,
                        const Rectangle &destArea,
                        GLbitfield mask,
                        GLenum filter);
-    bool isDefault() const;
+    bool isDefault() const { return mState.isDefault(); }
 
     enum DirtyBitType : size_t
     {
         DIRTY_BIT_COLOR_ATTACHMENT_0,
         DIRTY_BIT_COLOR_ATTACHMENT_MAX =
-            DIRTY_BIT_COLOR_ATTACHMENT_0 + IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS,
+            DIRTY_BIT_COLOR_ATTACHMENT_0 + IMPLEMENTATION_MAX_DRAW_BUFFERS,
         DIRTY_BIT_DEPTH_ATTACHMENT = DIRTY_BIT_COLOR_ATTACHMENT_MAX,
         DIRTY_BIT_STENCIL_ATTACHMENT,
+        DIRTY_BIT_COLOR_BUFFER_CONTENTS_0,
+        DIRTY_BIT_COLOR_BUFFER_CONTENTS_MAX =
+            DIRTY_BIT_COLOR_BUFFER_CONTENTS_0 + IMPLEMENTATION_MAX_DRAW_BUFFERS,
+        DIRTY_BIT_DEPTH_BUFFER_CONTENTS = DIRTY_BIT_COLOR_BUFFER_CONTENTS_MAX,
+        DIRTY_BIT_STENCIL_BUFFER_CONTENTS,
         DIRTY_BIT_DRAW_BUFFERS,
         DIRTY_BIT_READ_BUFFER,
         DIRTY_BIT_DEFAULT_WIDTH,
@@ -337,22 +383,22 @@ class Framebuffer final : public angle::ObserverInterface,
     using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
     bool hasAnyDirtyBit() const { return mDirtyBits.any(); }
 
-    bool hasActiveFloat32ColorAttachment() const
+    DrawBufferMask getActiveFloat32ColorAttachmentDrawBufferMask() const
     {
-        return (mFloat32ColorAttachmentBits & getDrawBufferMask()).any();
+        return mFloat32ColorAttachmentBits & getDrawBufferMask();
     }
 
     bool hasResourceThatNeedsInit() const { return mState.mResourceNeedsInit.any(); }
 
-    angle::Result syncState(const Context *context);
+    angle::Result syncState(const Context *context,
+                            GLenum framebufferBinding,
+                            Command command) const;
 
     // Observer implementation
-    void onSubjectStateChange(const Context *context,
-                              angle::SubjectIndex index,
-                              angle::SubjectMessage message) override;
+    void onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMessage message) override;
 
-    bool formsRenderingFeedbackLoopWith(const State &state) const;
-    bool formsCopyingFeedbackLoopWith(GLuint copyTextureID,
+    bool formsRenderingFeedbackLoopWith(const Context *context) const;
+    bool formsCopyingFeedbackLoopWith(TextureID copyTextureID,
                                       GLint copyTextureLevel,
                                       GLint copyTextureLayer) const;
 
@@ -361,8 +407,12 @@ class Framebuffer final : public angle::ObserverInterface,
                                                           GLenum buffer,
                                                           GLint drawbuffer);
     angle::Result ensureDrawAttachmentsInitialized(const Context *context);
-    angle::Result ensureReadAttachmentInitialized(const Context *context, GLbitfield blitMask);
+
+    // Conservatively initializes both read color and depth. Blit can access the depth buffer.
+    angle::Result ensureReadAttachmentsInitialized(const Context *context);
     Box getDimensions() const;
+
+    static const FramebufferID kDefaultDrawFramebufferHandle;
 
   private:
     bool detachResourceById(const Context *context, GLenum resourceType, GLuint resourceId);
@@ -370,8 +420,8 @@ class Framebuffer final : public angle::ObserverInterface,
                                   FramebufferAttachment *attachment,
                                   GLenum matchType,
                                   GLuint matchId);
-    GLenum checkStatusWithGLFrontEnd(const Context *context);
-    GLenum checkStatusImpl(const Context *context);
+    GLenum checkStatusWithGLFrontEnd(const Context *context) const;
+    GLenum checkStatusImpl(const Context *context) const;
     void setAttachment(const Context *context,
                        GLenum type,
                        GLenum binding,
@@ -379,13 +429,13 @@ class Framebuffer final : public angle::ObserverInterface,
                        FramebufferAttachmentObject *resource,
                        GLsizei numViews,
                        GLuint baseViewIndex,
-                       GLenum multiviewLayout,
-                       const GLint *viewportOffsets);
+                       bool isMultiview,
+                       GLsizei samples);
     void commitWebGL1DepthStencilIfConsistent(const Context *context,
                                               GLsizei numViews,
                                               GLuint baseViewIndex,
-                                              GLenum multiviewLayout,
-                                              const GLint *viewportOffsets);
+                                              bool isMultiview,
+                                              GLsizei samples);
     void setAttachmentImpl(const Context *context,
                            GLenum type,
                            GLenum binding,
@@ -393,8 +443,8 @@ class Framebuffer final : public angle::ObserverInterface,
                            FramebufferAttachmentObject *resource,
                            GLsizei numViews,
                            GLuint baseViewIndex,
-                           GLenum multiviewLayout,
-                           const GLint *viewportOffsets);
+                           bool isMultiview,
+                           GLsizei samples);
     void updateAttachment(const Context *context,
                           FramebufferAttachment *attachment,
                           size_t dirtyBit,
@@ -405,8 +455,8 @@ class Framebuffer final : public angle::ObserverInterface,
                           FramebufferAttachmentObject *resource,
                           GLsizei numViews,
                           GLuint baseViewIndex,
-                          GLenum multiviewLayout,
-                          const GLint *viewportOffsets);
+                          bool isMultiview,
+                          GLsizei samples);
 
     void markDrawAttachmentsInitialized(bool color, bool depth, bool stencil);
     void markBufferInitialized(GLenum bufferType, GLint bufferIndex);
@@ -432,17 +482,17 @@ class Framebuffer final : public angle::ObserverInterface,
     FramebufferState mState;
     rx::FramebufferImpl *mImpl;
 
-    Optional<GLenum> mCachedStatus;
+    mutable Optional<GLenum> mCachedStatus;
     std::vector<angle::ObserverBinding> mDirtyColorAttachmentBindings;
     angle::ObserverBinding mDirtyDepthAttachmentBinding;
     angle::ObserverBinding mDirtyStencilAttachmentBinding;
 
-    DirtyBits mDirtyBits;
+    mutable DirtyBits mDirtyBits;
     DrawBufferMask mFloat32ColorAttachmentBits;
 
     // The dirty bits guard is checked when we get a dependent state change message. We verify that
     // we don't set a dirty bit that isn't already set, when inside the dirty bits syncState.
-    Optional<DirtyBits> mDirtyBitsGuard;
+    mutable Optional<DirtyBits> mDirtyBitsGuard;
 };
 
 }  // namespace gl
